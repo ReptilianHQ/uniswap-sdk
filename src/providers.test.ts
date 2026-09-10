@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getV4PoolId } from './pool.js';
 import { buildV4PoolSubscriptions, verifyV4ProviderPool, type V4ProviderDescriptor, type V4ProviderPool } from './providers.js';
-import type { Hex } from 'viem';
+import { encodeEventTopics, parseAbi, type Hex } from 'viem';
 const addr = (n: number) => `0x${n.toString(16).padStart(40, '0')}` as const;
 const hash = (n: number) => `0x${n.toString(16).padStart(64, '0')}` as Hex;
 const provider: V4ProviderDescriptor = {
@@ -47,6 +47,17 @@ describe('selective provider subscriptions', () => {
       const value = pool(); mutate(value);
       expect(() => verifyV4ProviderPool(provider, value)).toThrow();
     }
+  });
+  it('uses the canonical indexed topic for each standard pool event', () => {
+    const abi = parseAbi([
+      'event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)',
+      'event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)',
+      'event ModifyLiquidity(bytes32 indexed id, address indexed sender, int24 tickLower, int24 tickUpper, int256 liquidityDelta, bytes32 salt)',
+      'event Donate(bytes32 indexed id, address indexed sender, uint256 amount0, uint256 amount1)',
+    ]);
+    const events = ['Initialize', 'Swap', 'ModifyLiquidity', 'Donate'] as const;
+    const plans = buildV4PoolSubscriptions({ ...provider, poolEvents: events }, [pool()], options);
+    expect(plans.map(plan => plan.topics[0])).toEqual(events.map(eventName => encodeEventTopics({ abi, eventName })[0]));
   });
   it('rejects contradictory membership checkpoints instead of hiding a reorg', () => {
     const alternative = pool(); alternative.membership.blockHash = hash(8);

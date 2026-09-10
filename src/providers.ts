@@ -107,7 +107,9 @@ export function buildV4PoolSubscriptions(provider: V4ProviderDescriptor, pools: 
   for (const [id, pool] of [...selected].sort(([a], [b]) => a.localeCompare(b))) {
     const start = pool.membership.blockNumber > options.fromBlock ? pool.membership.blockNumber : options.fromBlock;
     if (start > options.toBlock) continue;
-    groups.set(start, [...(groups.get(start) ?? []), id as Hex]);
+    const group = groups.get(start) ?? [];
+    group.push(id as Hex);
+    groups.set(start, group);
   }
   const plans: { providerId: string; deploymentId: string; chainId: number; address: Address; fromBlock: bigint; toBlock: bigint; topics: readonly [Hex, readonly Hex[]] }[] = [];
   for (const [fromBlock, ids] of [...groups].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
