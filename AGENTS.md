@@ -1,6 +1,6 @@
 # Uniswap SDK
 
-Use Node 24 and the pinned npm version. Keep this repository independently
+Use Node 24 or 26 and the pinned npm version; CI verifies both supported consumer runtimes. Keep this repository independently
 installable; no parent-relative imports or platform configuration dependencies.
 Run `npm ci --ignore-scripts` and `npm run check` before releasing.
 
