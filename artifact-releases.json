@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "publisherVersion": "1.2.0",
+  "groups": [
+    {
+      "id": "uniswap-sdk",
+      "packages": [
+        {
+          "path": ".",
+          "name": "@reptilianhq/uniswap-sdk"
+        }
+      ],
+      "registry": "https://npm.pkg.github.com",
+      "access": "restricted",
+      "channels": [
+        "rc",
+        "latest"
+      ],
+      "pack": "npm"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "name": "@reptilianhq/uniswap-sdk",
+  "version": "0.1.0-rc.1",
+  "description": "Deployment-explicit Uniswap v4 observations and simulated quotes.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "RELEASING.md",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./v4": {
+      "types": "./dist/v4.d.ts",
+      "import": "./dist/v4.js"
+    },
+    "./batch": {
+      "types": "./dist/batch.d.ts",
+      "import": "./dist/batch.js"
+    },
+    "./abis": {
+      "types": "./dist/abis.d.ts",
+      "import": "./dist/abis.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run build && npm run typecheck && npm run lint && npm run test:run && npm run test:runtime && npm run check:publisher && npm run test:release && npm run check:package",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test:run": "vitest run src",
+    "test:runtime": "node scripts/runtime-smoke.mjs",
+    "check:publisher": "node scripts/artifacts/check.mjs",
+    "test:release": "node --test scripts/artifacts/publisher.test.mjs scripts/release.test.mjs",
+    "check:package": "publint && attw --pack . --profile esm-only",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@uniswap/sdk-core": "7.19.2",
+    "@uniswap/v4-sdk": "2.3.3"
+  },
+  "peerDependencies": {
+    "viem": ">=2.55.0 <3"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.2",
+    "eslint": "10.6.0",
+    "globals": "17.7.0",
+    "publint": "0.3.23",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.62.0",
+    "viem": "2.55.2",
+    "vitest": "4.1.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ReptilianHQ/uniswap-sdk.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "packageManager": "npm@11.5.2"
+}

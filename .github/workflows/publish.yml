@@ -1,0 +1,62 @@
+name: Publish Uniswap SDK
+on:
+  push:
+    tags: ['uniswap-sdk-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact stable or numbered rc version to publish from main
+        required: true
+        type: string
+env:
+  ARTIFACT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('uniswap-sdk-v{0}', inputs.version) || github.ref_name }}
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: artifact-publish-uniswap-sdk
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('uniswap-sdk-v{0}', inputs.version) || github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@11.5.2
+      - name: Verify source belongs to main
+        run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
+      - name: Verify version and tag
+        run: node scripts/verify-release.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check
+      - name: Prepare immutable release artifacts
+        run: node scripts/artifacts/publisher.mjs prepare uniswap-sdk "${RUNNER_TEMP}/release"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: https://npm.pkg.github.com
+          scope: '@reptilianhq'
+      - name: Publish and verify immutable artifacts
+        run: node scripts/artifacts/publisher.mjs publish uniswap-sdk "${RUNNER_TEMP}/release"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain release evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: uniswap-sdk-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release/release-record.json
+            ${{ runner.temp }}/release/verification.json
+          if-no-files-found: ignore
+          retention-days: 90

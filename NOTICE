@@ -1,0 +1,4 @@
+This SDK depends on the MIT-licensed official Uniswap SDK packages.
+The official packages and their license notices remain in their distributions.
+The runtime bridge uses the upstream public CommonJS export without modifying it.
+Reptilian batch/read logic derives from ReptilianHQ/block-arb-bot.
