@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { poolKeyFromCurrencies, getV4PoolId } from '../dist/v4.js';
 import '../dist/errors.js';
+import { buildV4PoolSubscriptions } from '../dist/providers.js';
+assert.equal(typeof buildV4PoolSubscriptions, 'function');
 import '../dist/index.js';
 import '../dist/abis.js';
 

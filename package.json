@@ -1,6 +1,6 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.1.0-rc.3",
+  "version": "0.1.0-rc.4",
   "description": "Deployment-explicit Uniswap v4 observations and simulated quotes.",
   "license": "UNLICENSED",
   "type": "module",
@@ -36,6 +36,10 @@
     "./errors": {
       "types": "./dist/errors.d.ts",
       "import": "./dist/errors.js"
+    },
+    "./providers": {
+      "types": "./dist/providers.d.ts",
+      "import": "./dist/providers.js"
     }
   },
   "scripts": {

@@ -113,3 +113,16 @@ runtime/type checks cover the read-only surface actually released.
 Next: supply Arc contract/RPC details, verify code and hook/custody semantics,
 then add its adapter and a tested managed-position lifecycle. Existing v3-only
 application capability gates remain appropriate until that adapter is verified.
+
+## Protocol provider composition
+
+`./providers` exports portable `V4ProviderDescriptor` and `V4ProviderPool` types,
+structural verifiers, and `buildV4PoolSubscriptions`. Protocol SDKs own canonical
+membership, reviewed deployment/hook semantics and position capabilities. The
+shared planner checks complete identity and emits bounded event-topic requests
+for explicitly selected pools. Empty selection returns no requests; transports
+without indexed topic filtering are rejected.
+
+Callers own RPC selection, finality, canonical membership storage and reorg
+rollback. Replay the full discovery block. Structural checks cannot authenticate
+arbitrary supplied membership evidence and never authorize execution.
