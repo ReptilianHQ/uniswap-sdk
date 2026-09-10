@@ -86,6 +86,9 @@ coordinates. Consumers must not reconstruct complete depth from partial ticks.
 
 ## Verification and release boundary
 
+CI runs the full check suite on Node 24 and 26 with npm 11.5.2. Node 24
+remains the publication runtime and the minimum supported consumer version.
+
 From this independent repository:
 
 ```sh
