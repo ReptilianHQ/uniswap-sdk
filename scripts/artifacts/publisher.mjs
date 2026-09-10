@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const PUBLISHER_VERSION = '1.2.0';
+export const PUBLISHER_VERSION = '1.2.1';
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const run = (cmd, args, cwd = process.cwd()) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 const safePath = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes('\\') && !value.split('/').includes('..');
@@ -80,7 +80,17 @@ export function assertPublished(expected, actual) {
   assert.equal(actual.name, expected.name, 'Registry package name mismatch');
   assert.equal(actual.version, expected.version, 'Registry version mismatch');
   assert.equal(actual.dist?.integrity, expected.integrity, `Immutable bytes conflict for ${expected.name}@${expected.version}`);
-  if (expected.reptilianRelease) assert.deepEqual(actual.reptilianRelease, expected.reptilianRelease, 'Registry source identity mismatch');
+  if (expected.reptilianRelease && actual.reptilianRelease !== undefined) assert.deepEqual(actual.reptilianRelease, expected.reptilianRelease, 'Registry source identity mismatch');
+}
+// Registries may omit custom packument fields. The integrity-verified archive is
+// authoritative for the embedded source identity; never infer it from absence.
+export function assertDownloaded(expected, bytes) {
+  assert.equal(integrity(bytes), expected.integrity, `Downloaded registry tarball differs for ${expected.name}@${expected.version}`);
+  if (!expected.reptilianRelease) return;
+  const manifest = JSON.parse(execFileSync('tar', ['-xzOf', '-', 'package/package.json'], { input: bytes, maxBuffer: 4 * 1024 * 1024 }));
+  assert.equal(manifest.name, expected.name, 'Tarball package name mismatch');
+  assert.equal(manifest.version, expected.version, 'Tarball version mismatch');
+  assert.deepEqual(manifest.reptilianRelease, expected.reptilianRelease, 'Tarball source identity mismatch');
 }
 export function registryLookup(spec, registry) {
   const result = spawnSync('npm', ['view', spec, '--json', '--registry', registry], { cwd: tmpdir(), encoding: 'utf8' });
@@ -111,7 +121,7 @@ export async function publishRelease(record, { lookup, publish, tag, download, w
     const existing = lookup(`${pkg.name}@${pkg.version}`, record.registry);
     if (existing) {
       assertPublished(pkg, existing);
-      assert.equal(integrity(download(`${pkg.name}@${pkg.version}`, record.registry)), pkg.integrity, `Downloaded registry tarball differs for ${pkg.name}@${pkg.version}`);
+      assertDownloaded(pkg, download(`${pkg.name}@${pkg.version}`, record.registry));
     }
     const current = lookup(`${pkg.name}@${record.channel}`, record.registry);
     assert.ok(!current || compareVersions(current.version, pkg.version) <= 0, `Refusing to move ${pkg.name}@${record.channel} backwards`);
@@ -134,7 +144,7 @@ export async function publishRelease(record, { lookup, publish, tag, download, w
       if (exact) assertPublished(pkg, exact);
       if (exact && channel?.version === pkg.version) {
         assertPublished(pkg, channel);
-        assert.equal(integrity(download(`${pkg.name}@${pkg.version}`, record.registry)), pkg.integrity, `Downloaded registry tarball differs for ${pkg.name}@${pkg.version}`);
+        assertDownloaded(pkg, download(`${pkg.name}@${pkg.version}`, record.registry));
         verified = true;
         break;
       }

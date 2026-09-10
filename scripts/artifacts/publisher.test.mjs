@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, publishRelease, registryDownload } from './publisher.mjs';
+import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, assertDownloaded, integrity, publishRelease, registryDownload } from './publisher.mjs';
 const group = { id: 'consumer-contract', tagPrefix: 'consumer-v', registry: 'https://registry.npmjs.org', access: 'public', channels: ['latest'], pack: 'npm', packages: [{ name: '@example/consumer', path: 'packages/consumer' }] };
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 function fixture(run) {
@@ -152,3 +152,25 @@ console.log(JSON.stringify([{filename:'archive.tgz'}]));
     assert.equal(registryDownload('@example/consumer@1.2.3', 'https://npm.pkg.github.com').toString(), 'original registry bytes');
   } finally { process.env.PATH = previousPath; rmSync(root, { recursive: true, force: true }); }
 });
+
+test('registry metadata may omit source identity but verified tarball must contain it', () => fixture(({ root }) => {
+  const output = join(root, 'output');
+  const record = prepare(group, output, root);
+  const pkg = record.packages[0];
+  const bytes = readFileSync(join(output, pkg.filename));
+  const metadata = { name: pkg.name, version: pkg.version, dist: { integrity: pkg.integrity } };
+  assertPublished(pkg, metadata);
+  assertDownloaded(pkg, bytes);
+  assert.throws(() => assertPublished(pkg, { ...metadata, reptilianRelease: {} }), /Registry source identity/);
+  assert.throws(() => assertDownloaded({ ...pkg, reptilianRelease: { ...pkg.reptilianRelease, sourceSha: '0'.repeat(40) } }, bytes), /Tarball source identity/);
+  assert.throws(() => assertDownloaded(pkg, Buffer.from('corrupt')), /Downloaded registry tarball/);
+  const stripped = join(root, 'stripped');
+  mkdirSync(stripped);
+  execFileSync('tar', ['-xzf', join(output, pkg.filename), '-C', stripped]);
+  const manifestPath = join(stripped, 'package/package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath));
+  delete manifest.reptilianRelease;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  const strippedBytes = execFileSync('tar', ['-czf', '-', '-C', stripped, 'package']);
+  assert.throws(() => assertDownloaded({ ...pkg, integrity: integrity(strippedBytes) }, strippedBytes), /Tarball source identity/);
+}));

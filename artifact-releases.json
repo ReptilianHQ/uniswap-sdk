@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "publisherVersion": "1.2.0",
+  "publisherVersion": "1.2.1",
   "groups": [
     {
       "id": "uniswap-sdk",
