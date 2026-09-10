@@ -97,13 +97,16 @@ export function v4WordPosition(tick: number, tickSpacing: number) {
 }
 /** Spot window plus the two extremes, retaining full-range LP boundary ticks. */
 export function v4DepthWordPositions(currentTick: number, tickSpacing: number, radius: number) {
-  if (!Number.isInteger(radius) || radius < 0 || radius > 128) invalid('radius must be between 0 and 128');
+  if (!Number.isSafeInteger(radius) || radius < 0) invalid('radius must be a nonnegative safe integer');
   const { min, max } = usableV4TickRange(tickSpacing);
   const lo = v4WordPosition(min, tickSpacing);
   const hi = v4WordPosition(max, tickSpacing);
   const centre = v4WordPosition(currentTick, tickSpacing);
   const words = new Set([lo, hi]);
-  for (let word = centre - radius; word <= centre + radius; word++) if (word >= lo && word <= hi) words.add(word);
+  const start = Math.max(lo, centre - radius);
+  const end = Math.min(hi, centre + radius);
+  if (end - start + 1 > 257) invalid('Tick scan window must contain at most 257 bitmap words');
+  for (let word = start; word <= end; word++) words.add(word);
   return [...words].sort((a, b) => a - b);
 }
 

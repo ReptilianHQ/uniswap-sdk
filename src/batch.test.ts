@@ -52,3 +52,9 @@ describe('multicall host integration', () => {
     expect(result).toMatchObject({ ticks: [], failedWords: [-18], partial: true });
   });
 });
+
+it('bounds actual bitmap windows after clipping to usable ticks', () => {
+  expect(v4DepthWordPositions(800, 200, 400)).toHaveLength(36);
+  expect(() => v4DepthWordPositions(0, 1, 400)).toThrow('at most 257');
+  expect(() => v4DepthWordPositions(0, 200, -1)).toThrow('nonnegative');
+});
