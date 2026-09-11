@@ -4,9 +4,10 @@ The fork suite pins Robinhood mainnet block `60269962` with hash
 `0x0c8248fedd0d28673c6852b5d65d806dfad9be361e4d90ed5a84664ca72fd8bf`.
 It checks deployment runtime hashes and position-manager wiring, then uses an
 impersonated owner of position `1132071` to execute an SDK-built full close.
-The suite reviews the exact calldata before submission and verifies liquidity
-removal, token collection, NFT burn, and the final absence of `ownerOf` on the
-fork receipt.
+The suite reviews the exact calldata before submission, simulates the complete
+close to quote the principal and collected token amounts, then verifies that
+the executed receipt contains those exact collection amounts alongside the
+liquidity removal and NFT burn. It also confirms the final absence of `ownerOf`.
 
 Install Foundry so `anvil` is available, provide an archive-capable Robinhood
 mainnet endpoint, and run:

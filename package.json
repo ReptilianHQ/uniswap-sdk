@@ -1,6 +1,6 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.2.0-rc.3",
+  "version": "0.2.0",
   "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
   "license": "UNLICENSED",
   "type": "module",
@@ -11,6 +11,7 @@
     "examples",
     "fixtures",
     "provenance",
+    "scripts/check-conformance.mjs",
     "scripts/verify-v3-deployments.mjs",
     "README.md",
     "RELEASING.md",
@@ -71,7 +72,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "npm run build && npm run typecheck && npm run lint && npm run test:run && npm run test:runtime && npm run test:consumer && npm run check:publisher && npm run test:release && npm run check:package",
+    "check": "npm run build && npm run typecheck && npm run lint && npm run test:run && npm run test:runtime && npm run test:consumer && npm run check:conformance && npm run check:publisher && npm run test:release && npm run check:package",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test:run": "vitest run src",
@@ -79,6 +80,7 @@
     "test:fork": "vitest run src/v3-mainnet.fork.test.ts",
     "test:live-compatibility": "npm run build && node scripts/verify-v3-deployments.mjs",
     "test:consumer": "node examples/read-only-consumer.mjs",
+    "check:conformance": "node scripts/check-conformance.mjs . && node --test scripts/check-conformance.node-test.mjs",
     "check:publisher": "node scripts/artifacts/check.mjs",
     "test:release": "node --test scripts/artifacts/publisher.test.mjs scripts/release.test.mjs",
     "check:package": "publint && attw --pack . --profile esm-only",
