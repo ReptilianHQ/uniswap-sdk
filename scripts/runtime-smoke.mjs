@@ -6,6 +6,21 @@ import { buildV4PoolSubscriptions } from '../dist/providers.js';
 assert.equal(typeof buildV4PoolSubscriptions, 'function');
 import '../dist/index.js';
 import '../dist/abis.js';
+import {
+  buildV3ApprovalTransaction,
+  reviewV3ApprovalCalldata,
+  robinhoodUniswapV3Testnet,
+} from '../dist/v3.js';
+
+const approval = buildV3ApprovalTransaction(
+  robinhoodUniswapV3Testnet.contracts.wrappedNative,
+  robinhoodUniswapV3Testnet.contracts.nonfungiblePositionManager,
+  1n,
+);
+assert.equal(reviewV3ApprovalCalldata(
+  approval.data,
+  robinhoodUniswapV3Testnet.contracts.nonfungiblePositionManager,
+), 1n);
 
 const require = createRequire(import.meta.url);
 const { Ether, Token } = require('@uniswap/sdk-core');

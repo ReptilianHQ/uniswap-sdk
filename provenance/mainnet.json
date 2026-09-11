@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "robinhood-mainnet-v3",
+  "chainId": 4663,
+  "reviewedAt": "2026-09-11",
+  "abiRevision": "uniswap-v3-core-periphery-1.0.0",
+  "provenance": "official",
+  "explorerVerification": "official",
+  "contracts": {
+    "factory": "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
+    "nonfungiblePositionManager": "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
+    "quoterV2": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+    "swapRouter02": "0xcaf681a66d020601342297493863e78c959e5cb2",
+    "wrappedNative": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11"
+  },
+  "limitations": [
+    "Compatibility checks chain identity, deployed code presence, and position-manager factory/WETH9 wiring.",
+    "Runtime bytecode hashes are not pinned by this record and require separate release evidence."
+  ]
+}
