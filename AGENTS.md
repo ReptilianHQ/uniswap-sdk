@@ -10,6 +10,10 @@ compatibility from a standard ABI or successful pointer check. Preserve chain,
 manager, PoolKey, currency orientation, hook data, observation block and partial
 failures.
 
+Keep runtime code hashes, pinned receipt fixtures, and the documented fork block
+in sync with reviewed deployments. Fork tests must use impersonation only; do
+not add keys, funded live-chain accounts, or transaction submission.
+
 Publish through the shared versioned artifact publisher as documented in
 RELEASING.md. Preserve immutable tags, main ancestry and exact consumer pins.
 Do not add keys or transaction submission to protocol helpers.

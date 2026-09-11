@@ -1,4 +1,4 @@
-import { getAddress, type Address } from 'viem';
+import { getAddress, type Address, type Hex } from 'viem';
 import { V3_ABI_REVISION } from './v3-abis.js';
 import { UniswapSdkError } from './errors.js';
 
@@ -13,6 +13,9 @@ export interface UniswapV3Contracts {
   multicall3: Address;
 }
 
+export type UniswapV3ContractName = keyof UniswapV3Contracts;
+export type UniswapV3RuntimeCodeHashes = Readonly<Record<UniswapV3ContractName, Hex>>;
+
 export interface UniswapV3Deployment {
   id: RobinhoodUniswapV3DeploymentId;
   chainId: number;
@@ -22,6 +25,7 @@ export interface UniswapV3Deployment {
   explorerVerification: 'official' | 'partial';
   reviewedAt: string;
   contracts: UniswapV3Contracts;
+  runtimeCodeHashes: UniswapV3RuntimeCodeHashes;
 }
 
 const multicall3 = getAddress('0xca11bde05977b3631167028862be2a173976ca11');
@@ -42,6 +46,14 @@ export const robinhoodUniswapV3Mainnet: UniswapV3Deployment = deepFreeze({
     wrappedNative: getAddress('0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73'),
     multicall3,
   },
+  runtimeCodeHashes: {
+    factory: '0xec72b1abd1f2faee020cfea9c646bd8994f9fb389054f6e574f103a895091739',
+    nonfungiblePositionManager: '0x0a493d1af3d0f25fed8efa205244ebee14114267a08647fc38c515c7cd6ead4f',
+    quoterV2: '0x3db0868d945e9304c9bc6a8b2181948109ea617647142f3c4083e14393496a28',
+    swapRouter02: '0x6f36c378e272c6324c48f045182bcb54bd8ad654cf9ebd42e8893d52c4cb25dc',
+    wrappedNative: '0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353',
+    multicall3: '0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891',
+  },
 });
 
 export const robinhoodUniswapV3Testnet: UniswapV3Deployment = deepFreeze({
@@ -59,6 +71,14 @@ export const robinhoodUniswapV3Testnet: UniswapV3Deployment = deepFreeze({
     swapRouter02: getAddress('0xb79cB26e90EBBD9bC02c75267c9a86dBa1AFedB7'),
     wrappedNative: getAddress('0x7943e237c7F95DA44E0301572D358911207852Fa'),
     multicall3,
+  },
+  runtimeCodeHashes: {
+    factory: '0x75c5bbc7989daa85188d9e4c9f989271d8bcb2abad3d47e6e47d3c0c5bff02c2',
+    nonfungiblePositionManager: '0xe40cd590528ac8b67b428579035fe391e502c38271623777692c50834688e9d5',
+    quoterV2: '0x724c4956e1c61fd13285a92685337df60254bc67f775e7268da2fc5cc79d5343',
+    swapRouter02: '0xdce781dc17d5f98e3ea0b72d88639a5995ccbba6e11bc01f2057a9409dc8c724',
+    wrappedNative: '0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353',
+    multicall3: '0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891',
   },
 });
 

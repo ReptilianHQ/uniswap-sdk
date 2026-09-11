@@ -1,14 +1,18 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.2.0-rc.1",
+  "version": "0.2.0-rc.2",
   "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
   "license": "UNLICENSED",
   "type": "module",
   "sideEffects": false,
   "files": [
     "dist",
+    "docs",
     "examples",
+    "fixtures",
     "provenance",
+    "scripts/fork-v3-mainnet.mjs",
+    "scripts/verify-v3-deployments.mjs",
     "README.md",
     "RELEASING.md",
     "NOTICE"
@@ -73,6 +77,8 @@
     "lint": "eslint . --max-warnings 0",
     "test:run": "vitest run src",
     "test:runtime": "node scripts/runtime-smoke.mjs",
+    "test:fork": "npm run build && node scripts/fork-v3-mainnet.mjs",
+    "test:live-compatibility": "npm run build && node scripts/verify-v3-deployments.mjs",
     "test:consumer": "node examples/read-only-consumer.mjs",
     "check:publisher": "node scripts/artifacts/check.mjs",
     "test:release": "node --test scripts/artifacts/publisher.test.mjs scripts/release.test.mjs",
