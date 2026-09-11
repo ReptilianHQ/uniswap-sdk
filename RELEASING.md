@@ -15,13 +15,13 @@ packed export lint, and packed ESM/type resolution. The published scope includes
 v4 observations and provider plans plus v3 reviewed deployments, exact runtime
 code hashes, unsigned transaction construction, calldata review, compatibility
 checks, and pinned receipt evidence. Run `npm run test:fork` separately with an
-archive-capable `UNISWAP_FORK_RPC_URL`; it executes the reviewed close path on a
+archive-capable `SDK_FORK_EIP155_4663_RPC_URL`; it executes the reviewed close path on a
 pinned Anvil fork. Run `npm run test:live-compatibility` before release to
 recheck both deployment records. Runtime code identity is not source verification or
 custom-hook compatibility. Arc details remain unavailable.
 
-Set one exact version such as `0.2.0-rc.2` in package.json and package-lock.json,
-land the source on main, then push its immutable tag `uniswap-sdk-v0.2.0-rc.2`.
+Set one exact version such as `0.2.0-rc.3` in package.json and package-lock.json,
+land the source on main, then push its immutable tag `uniswap-sdk-v0.2.0-rc.3`.
 The publish workflow verifies version identity and main ancestry, reruns package
 checks, prepares archives and source metadata, publishes the archive without
 rerunning lifecycle scripts, and verifies the registry metadata and downloaded
@@ -39,8 +39,8 @@ When CI minutes are unavailable, run the same checks locally and use the same
 publisher, from a clean tagged checkout with origin/main fetched:
 
 ```sh
-ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.0-rc.2 node scripts/artifacts/publisher.mjs prepare uniswap-sdk .release
-ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.0-rc.2 node scripts/artifacts/publisher.mjs publish uniswap-sdk .release
+ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.0-rc.3 node scripts/artifacts/publisher.mjs prepare uniswap-sdk .release
+ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.0-rc.3 node scripts/artifacts/publisher.mjs publish uniswap-sdk .release
 ```
 
 Registry credentials must already be configured; do not print tokens or put
