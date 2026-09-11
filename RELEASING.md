@@ -1,7 +1,7 @@
 # Uniswap SDK releases
 
 This repository owns `@reptilianhq/uniswap-sdk`. Publish to restricted GitHub
-Packages using the same Reptilian artifact publisher 1.2.1 used by the other
+Packages using the same Reptilian artifact publisher 1.2.2 used by the other
 standalone package owners. `scripts/artifacts/publisher.lock.json` pins the
 canonical publisher bytes; update them from the Reptilian root's vendor command.
 Do not edit the emitted publisher locally.
@@ -22,8 +22,8 @@ amounts to match the simulation. Run `npm run test:live-compatibility` before re
 recheck both deployment records. Runtime code identity is not source verification or
 custom-hook compatibility. Arc details remain unavailable.
 
-Set one exact version such as `0.2.0` in package.json and package-lock.json,
-land the source on main, then push its immutable tag `uniswap-sdk-v0.2.0`.
+Set one exact version such as `0.2.1` in package.json and package-lock.json,
+land the source on main, then push its immutable tag `uniswap-sdk-v0.2.1`.
 The publish workflow verifies version identity and main ancestry, reruns package
 checks, prepares archives and source metadata, publishes the archive without
 rerunning lifecycle scripts, and verifies the registry metadata and downloaded
@@ -41,8 +41,8 @@ When CI minutes are unavailable, run the same checks locally and use the same
 publisher, from a clean tagged checkout with origin/main fetched:
 
 ```sh
-ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.0 node scripts/artifacts/publisher.mjs prepare uniswap-sdk .release
-ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.0 node scripts/artifacts/publisher.mjs publish uniswap-sdk .release
+ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.1 node scripts/artifacts/publisher.mjs prepare uniswap-sdk .release
+ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.1 node scripts/artifacts/publisher.mjs publish uniswap-sdk .release
 ```
 
 Registry credentials must already be configured; do not print tokens or put

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, assertDownloaded, integrity, publishRelease, registryDownload } from './publisher.mjs';
+import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, assertDownloaded, integrity, publishRelease, registryDownload, registryLookup } from './publisher.mjs';
 const group = { id: 'consumer-contract', tagPrefix: 'consumer-v', registry: 'https://registry.npmjs.org', access: 'public', channels: ['latest'], pack: 'npm', packages: [{ name: '@example/consumer', path: 'packages/consumer' }] };
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 function fixture(run) {
@@ -150,6 +150,19 @@ console.log(JSON.stringify([{filename:'archive.tgz'}]));
 `, { mode: 0o755 });
     process.env.PATH = `${root}:${previousPath}`;
     assert.equal(registryDownload('@example/consumer@1.2.3', 'https://npm.pkg.github.com').toString(), 'original registry bytes');
+  } finally { process.env.PATH = previousPath; rmSync(root, { recursive: true, force: true }); }
+});
+
+test('registry lookup treats GitHub Packages empty success as an absent version', () => {
+  const root = mkdtempSync(join(tmpdir(), 'publisher-npm-lookup-'));
+  const previousPath = process.env.PATH;
+  try {
+    writeFileSync(join(root, 'npm'), `#!${process.execPath}
+import assert from 'node:assert/strict';
+assert.deepEqual(process.argv.slice(2), ['view','@example/consumer@1.2.3','--json','--registry','https://npm.pkg.github.com']);
+`, { mode: 0o755 });
+    process.env.PATH = `${root}:${previousPath}`;
+    assert.equal(registryLookup('@example/consumer@1.2.3', 'https://npm.pkg.github.com'), null);
   } finally { process.env.PATH = previousPath; rmSync(root, { recursive: true, force: true }); }
 });
 
