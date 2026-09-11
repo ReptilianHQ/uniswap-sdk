@@ -8,6 +8,10 @@ export class UniswapSdkError extends Error {
   toJSON() { return { name: this.name, code: this.code, message: this.message }; }
 }
 
+export function isUniswapSdkError(value: unknown): value is UniswapSdkError {
+  return value instanceof UniswapSdkError;
+}
+
 export function invalid(message: string): never { throw new UniswapSdkError('INVALID_ARGUMENT', message); }
 
 export async function rpc<T>(operation: () => Promise<T>): Promise<T> {
