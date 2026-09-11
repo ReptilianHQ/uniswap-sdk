@@ -7,6 +7,7 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "examples",
     "README.md",
     "RELEASING.md",
     "NOTICE"
@@ -44,11 +45,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "npm run build && npm run typecheck && npm run lint && npm run test:run && npm run test:runtime && npm run check:publisher && npm run test:release && npm run check:package",
+    "check": "npm run build && npm run typecheck && npm run lint && npm run test:run && npm run test:runtime && npm run test:consumer && npm run check:publisher && npm run test:release && npm run check:package",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test:run": "vitest run src",
     "test:runtime": "node scripts/runtime-smoke.mjs",
+    "test:consumer": "node examples/read-only-consumer.mjs",
     "check:publisher": "node scripts/artifacts/check.mjs",
     "test:release": "node --test scripts/artifacts/publisher.test.mjs scripts/release.test.mjs",
     "check:package": "publint && attw --pack . --profile esm-only",

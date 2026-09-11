@@ -4,6 +4,7 @@ import { Pool } from '@uniswap/v4-sdk';
 import { createPublicClient, custom, decodeFunctionData, encodeAbiParameters, encodeFunctionResult, encodeEventTopics, zeroAddress, type Address, type Hex } from 'viem';
 import { v4PoolManagerAbi, v4QuoterAbi, v4StateViewAbi } from './abis.js';
 import { decodeV4PoolInitialization, getV4PoolId, poolKeyFromCurrencies, poolReference, quoteV4Batch, quoteV4ExactInput, readV4Pool, readV4TickWindow, ticksInWord, verifyV4DeploymentWiring, type V4Deployment, type V4PoolKey } from './v4.js';
+import { isUniswapSdkError } from './errors.js';
 
 const token: Address = '0x0000000000000000000000000000000000000010';
 const other: Address = '0x0000000000000000000000000000000000000020';
@@ -63,6 +64,31 @@ describe('v4 pool identity', () => {
       expect(() => getV4PoolId({ ...key, ...bad })).toThrow();
     }
     expect(() => poolKeyFromCurrencies(new Token(1, token, 18), new Token(4663, other, 18), 3000, 60, zeroAddress)).toThrow('same chain');
+    try {
+      const duplicate = new Token(1, token, 18);
+      poolKeyFromCurrencies(duplicate, duplicate, 3000, 60, zeroAddress);
+      expect.unreachable('duplicate currencies must be rejected');
+    } catch (error) {
+      expect(isUniswapSdkError(error)).toBe(true);
+      expect(error).toMatchObject({ code: 'INVALID_ARGUMENT', message: 'Pool currencies must be distinct' });
+    }
+    try {
+      poolKeyFromCurrencies(
+        new Token(1, token, 18),
+        new Token(1, other, 18),
+        3000,
+        60,
+        'not-an-address' as Address,
+      );
+      expect.unreachable('upstream validation failures must be normalized');
+    } catch (error) {
+      expect(isUniswapSdkError(error)).toBe(true);
+      expect(error).toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: 'Official Uniswap SDK rejected the pool parameters',
+        cause: expect.any(Error),
+      });
+    }
   });
   it('does not confuse identical pool IDs on different managers or chains', () => {
     const first = poolReference(deployment, key);
@@ -144,5 +170,6 @@ describe('v4 discovery normalization', () => {
     expect(() => decodeV4PoolInitialization(deployment, { ...log, removed: true })).toThrow('Removed');
     expect(() => decodeV4PoolInitialization(deployment, { ...log, address: account })).toThrow('different');
     expect(() => decodeV4PoolInitialization(deployment, { ...log, topics: [topics[0] as Hex, `0x${'00'.repeat(32)}`, ...topics.slice(2) as Hex[]] })).toThrow('pool ID');
+    expect(() => decodeV4PoolInitialization(deployment, { ...log, data: '0x' })).toThrow(expect.objectContaining({ code: 'INVALID_ARGUMENT' }));
   });
 });

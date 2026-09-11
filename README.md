@@ -42,6 +42,11 @@ const quote = await quoteV4ExactInput(publicClient, reviewedDeployment, poolKey,
 }, { blockNumber: pool.blockNumber });
 ```
 
+A complete deterministic consumer example is available in
+[`examples/read-only-consumer.mjs`](./examples/read-only-consumer.mjs). It uses
+the published package subpaths and demonstrates a pool observation, a partial
+tick result, and branching on `isUniswapSdkError`.
+
 `reviewedDeployment` contains chainId, PoolManager, StateView and Quoter addresses.
 There are no implicit Robinhood or Arc deployments. Hosts own endpoint selection,
 finality, capability policy and secret storage. For multicall consumers, use
@@ -54,7 +59,7 @@ the host must check chain/deployment identity and Quoter multicall compatibility
 
 The direct-client RPC operations check chain identity (the `./batch` host owns that check). Pool/tick reads check StateView's
 PoolManager pointer; quotes check the Quoter pointer at the observation block.
-`verifyWiring` checks both pointers. This proves wiring only: a contract that
+`verifyV4DeploymentWiring` checks both pointers. This proves wiring only: a contract that
 returns the expected pointer is not necessarily the reviewed implementation.
 Source/code verification and hook-specific compatibility remain release gates.
 
@@ -84,6 +89,15 @@ limited to 16 bitmap words with at most 16 concurrent tick calls. A narrower
 range or any failed bitmap/tick sets `partial: true` and records missing
 coordinates. Consumers must not reconstruct complete depth from partial ticks.
 
+The `./batch` helpers preserve legacy host behavior deliberately. Unlike direct
+quotes, `quoteV4WithBatch` accepts zero input for sizing probes. Invalid input
+rejects the whole helper call; only Quoter reverts and malformed Quoter responses
+become item-level failures. `decodeV4PoolState` permits zero state for
+uninitialized-pool probes. `readV4TicksWithBatch` accepts an explicit set of up
+to 259 bitmap words and marks the result partial unless that set covers the full
+usable range without failures. Batch transports must pin the block and preserve
+the sender context themselves.
+
 ## Verification and release boundary
 
 CI runs the full check suite on Node 24 and 26 with npm 11.5.2. Node 24
@@ -99,7 +113,9 @@ npm run check
 The local suite uses real viem ABI encoding/decoding over a deterministic RPC
 transport, plus official SDK identity comparisons. It covers multiple chain
 IDs, native/ERC-20 direction, dynamic-fee hook data, pointer/chain mismatch,
-partial depth, failed versus zero quotes, discovery identity, and batched transport compatibility. It does not establish Arc or Robinhood live compatibility.
+partial depth, failed versus zero quotes, discovery identity, batched transport
+compatibility, and the runnable package-subpath consumer example. It does not
+establish Arc or Robinhood live compatibility.
 
 Releases use the versioned Reptilian publisher, exact main-ancestry tags,
 immutable archive verification, and retained evidence; see [RELEASING.md](./RELEASING.md).

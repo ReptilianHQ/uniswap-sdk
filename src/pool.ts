@@ -1,7 +1,7 @@
 import { Pool } from './official-sdk.cjs';
 import type { Currency } from '@uniswap/sdk-core';
 import { encodeAbiParameters, getAddress, isAddress, keccak256, zeroAddress, type Address, type Hex } from 'viem';
-import { invalid } from './errors.js';
+import { invalid, UniswapSdkError } from './errors.js';
 
 export interface V4PoolKey { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address }
 export interface V4Deployment { chainId: number; poolManager: Address; stateView: Address; quoter: Address }
@@ -29,8 +29,14 @@ export function validatePoolKey(key: V4PoolKey): V4PoolKey {
 /** Official SDK currency normalization; native currencies remain address(0). */
 export function poolKeyFromCurrencies(a: Currency, b: Currency, fee: number, tickSpacing: number, hooks: Address): V4PoolKey {
   if (a.chainId !== b.chainId) invalid('Pool currencies must belong to the same chain');
-  const key = Pool.getPoolKey(a, b, fee, tickSpacing, hooks);
-  return validatePoolKey({ ...key, currency0: checkedAddress(key.currency0 as Address), currency1: checkedAddress(key.currency1 as Address), hooks: checkedAddress(key.hooks as Address) });
+  if (a.equals(b)) invalid('Pool currencies must be distinct');
+  try {
+    const key = Pool.getPoolKey(a, b, fee, tickSpacing, hooks);
+    return validatePoolKey({ ...key, currency0: checkedAddress(key.currency0 as Address), currency1: checkedAddress(key.currency1 as Address), hooks: checkedAddress(key.hooks as Address) });
+  } catch (cause) {
+    if (cause instanceof UniswapSdkError) throw cause;
+    throw new UniswapSdkError('INVALID_ARGUMENT', 'Official Uniswap SDK rejected the pool parameters', { cause });
+  }
 }
 
 /** Pool ID does not contain chain or manager identity; retain the full reference. */

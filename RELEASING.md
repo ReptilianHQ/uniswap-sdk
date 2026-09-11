@@ -9,7 +9,8 @@ Do not edit the emitted publisher locally.
 ## Release verification
 
 Run `npm ci --ignore-scripts` and `npm run check`. Checks include TypeScript,
-lint, unit tests, built Node ESM runtime smoke, publisher checksum and tests,
+lint, unit tests, built Node ESM runtime smoke, a runnable consumer example using
+the public package subpaths, publisher checksum and tests,
 packed export lint, and packed ESM/type resolution. The published scope is pool
 observations, events, quote simulation and selective provider subscription plans only. Contract wiring checks are not
 bytecode provenance or custom-hook compatibility. Arc details remain unavailable.
