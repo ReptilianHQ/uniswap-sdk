@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "robinhood-mainnet-v3",
+  "chainId": 4663,
+  "abiRevision": "uniswap-v3-core-periphery-1.0.0",
+  "recordedHead": 60266150,
+  "minimumFinalityDepth": 5000,
+  "transactionHash": "0x010857a8063c93493bfd3fb010ef8af77b0ac64a0866f86ee542396c2eefe105",
+  "blockHash": "0xa9bcdc3119d06bee5949915e974d0f33163fa30782ce0a3f6b238c683f50f239",
+  "blockNumber": 60183858,
+  "status": "success",
+  "manager": "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
+  "recipient": "0xB4AcBc082b5E7DEd571c98eE4257778A9d784B36",
+  "tokenId": "1131007",
+  "logSelection": "position-manager mint and liquidity evidence",
+  "logs": [
+    {
+      "address": "0x73991a25c818bf1f1128deaab1492d45638de0d3",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x000000000000000000000000b4acbc082b5e7ded571c98ee4257778a9d784b36",
+        "0x00000000000000000000000000000000000000000000000000000000001141ff"
+      ],
+      "data": "0x"
+    },
+    {
+      "address": "0x73991a25c818bf1f1128deaab1492d45638de0d3",
+      "topics": [
+        "0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f",
+        "0x00000000000000000000000000000000000000000000000000000000001141ff"
+      ],
+      "data": "0x0000000000000000000000000000000000000000000000007e059550b2ea9d4c00000000000000000000000000000000000000000000000552d668a9c55f844b000000000000000000000000000000000000000000000000001bc9d7505123ac"
+    }
+  ],
+  "expected": {
+    "mintedTokenId": "1131007",
+    "liquidityAdded": "9080828397494115660",
+    "amount0Added": "98202793803044062283",
+    "amount1Added": "7821750973834156"
+  }
+}

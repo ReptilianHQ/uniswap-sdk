@@ -1,19 +1,19 @@
-import { getAddress, type Address, type PublicClient } from 'viem';
+import { getAddress, keccak256, type Address, type Hex, type PublicClient } from 'viem';
 import { V3_ABI_REVISION, v3PositionManagerAbi } from './v3-abis.js';
-import type { UniswapV3Deployment } from './deployments.js';
+import type { UniswapV3ContractName, UniswapV3Deployment } from './deployments.js';
 import { rpc, UniswapSdkError } from './errors.js';
 
 export interface UniswapV3CompatibilityReport {
   chainId: number;
   abiRevision: string;
   contractsWithCode: readonly Address[];
+  runtimeCodeHashes: Readonly<Record<UniswapV3ContractName, Hex>>;
   positionManagerFactory: Address;
   positionManagerWrappedNative: Address;
 }
 
 /**
- * Checks chain identity, deployed code, and position-manager wiring. This does
- * not claim bytecode provenance; release evidence must establish that separately.
+ * Checks chain identity, exact runtime code hashes, and position-manager wiring.
  */
 export async function verifyUniswapV3Compatibility(
   client: PublicClient,
@@ -24,17 +24,18 @@ export async function verifyUniswapV3Compatibility(
     const chainId = await client.getChainId();
     if (chainId !== deployment.chainId) mismatch('chainId', deployment.chainId, chainId);
 
-    const checked = [
-    deployment.contracts.factory,
-    deployment.contracts.nonfungiblePositionManager,
-    deployment.contracts.quoterV2,
-    deployment.contracts.swapRouter02,
-    deployment.contracts.wrappedNative,
-    deployment.contracts.multicall3,
-    ];
-    for (const address of checked) {
+    const contractNames = Object.keys(deployment.contracts) as UniswapV3ContractName[];
+    const checked = contractNames.map(name => deployment.contracts[name]);
+    const runtimeCodeHashes = {} as Record<UniswapV3ContractName, Hex>;
+    for (const name of contractNames) {
+      const address = deployment.contracts[name];
       const bytecode = await client.getBytecode({ address });
       if (!bytecode || bytecode === '0x') mismatch(`contracts.${address}`, 'deployed bytecode', bytecode ?? 'undefined');
+      const runtimeCodeHash = keccak256(bytecode);
+      if (runtimeCodeHash !== deployment.runtimeCodeHashes[name]) {
+        mismatch(`runtimeCodeHashes.${name}`, deployment.runtimeCodeHashes[name], runtimeCodeHash);
+      }
+      runtimeCodeHashes[name] = runtimeCodeHash;
     }
 
     const [factory, wrappedNative] = await Promise.all([
@@ -48,6 +49,7 @@ export async function verifyUniswapV3Compatibility(
       chainId,
       abiRevision: deployment.abiRevision,
       contractsWithCode: checked,
+      runtimeCodeHashes,
       positionManagerFactory: factory,
       positionManagerWrappedNative: wrappedNative,
     };

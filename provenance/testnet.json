@@ -14,8 +14,20 @@
     "wrappedNative": "0x7943e237c7F95DA44E0301572D358911207852Fa",
     "multicall3": "0xca11bde05977b3631167028862be2a173976ca11"
   },
+  "runtimeCodeHashes": {
+    "factory": "0x75c5bbc7989daa85188d9e4c9f989271d8bcb2abad3d47e6e47d3c0c5bff02c2",
+    "nonfungiblePositionManager": "0xe40cd590528ac8b67b428579035fe391e502c38271623777692c50834688e9d5",
+    "quoterV2": "0x724c4956e1c61fd13285a92685337df60254bc67f775e7268da2fc5cc79d5343",
+    "swapRouter02": "0xdce781dc17d5f98e3ea0b72d88639a5995ccbba6e11bc01f2057a9409dc8c724",
+    "wrappedNative": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
+    "multicall3": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+  },
+  "runtimeCodeHashPin": {
+    "blockNumber": 117449391,
+    "rpc": "https://rpc.testnet.chain.robinhood.com"
+  },
   "limitations": [
     "The factory and position manager were reviewed against pinned Uniswap v3 source artifacts; the remaining addresses have partial explorer verification.",
-    "Runtime bytecode hashes are not pinned by this record and require separate release evidence."
+    "Runtime code hashes establish deployed-code identity; they do not establish source verification or custom-hook compatibility."
   ]
 }

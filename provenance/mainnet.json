@@ -14,8 +14,20 @@
     "wrappedNative": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
     "multicall3": "0xca11bde05977b3631167028862be2a173976ca11"
   },
+  "runtimeCodeHashes": {
+    "factory": "0xec72b1abd1f2faee020cfea9c646bd8994f9fb389054f6e574f103a895091739",
+    "nonfungiblePositionManager": "0x0a493d1af3d0f25fed8efa205244ebee14114267a08647fc38c515c7cd6ead4f",
+    "quoterV2": "0x3db0868d945e9304c9bc6a8b2181948109ea617647142f3c4083e14393496a28",
+    "swapRouter02": "0x6f36c378e272c6324c48f045182bcb54bd8ad654cf9ebd42e8893d52c4cb25dc",
+    "wrappedNative": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
+    "multicall3": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+  },
+  "runtimeCodeHashPin": {
+    "blockNumber": 60266150,
+    "rpc": "https://rpc.mainnet.chain.robinhood.com"
+  },
   "limitations": [
-    "Compatibility checks chain identity, deployed code presence, and position-manager factory/WETH9 wiring.",
-    "Runtime bytecode hashes are not pinned by this record and require separate release evidence."
+    "Compatibility checks chain identity, exact runtime code hashes, and position-manager factory/WETH9 wiring.",
+    "Runtime code hashes establish deployed-code identity; they do not establish source verification or custom-hook compatibility."
   ]
 }

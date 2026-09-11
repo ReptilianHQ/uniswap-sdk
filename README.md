@@ -136,12 +136,19 @@ npm run check
 ```
 
 The local suite uses real viem ABI encoding/decoding over a deterministic RPC
-transport, plus official SDK identity comparisons and Hegel property invariants.
+transport, plus official SDK identity comparisons, Hegel property invariants,
+and pinned finalized Robinhood mainnet receipt fixtures.
 It covers v3 construction/review identity, manager-scoped receipt evidence, multiple chain
 IDs, native/ERC-20 direction, dynamic-fee hook data, pointer/chain mismatch,
 partial depth, failed versus zero quotes, discovery identity, batched transport
-compatibility, and the runnable package-subpath consumer example. Local tests do
-not establish live deployment compatibility or bytecode provenance.
+compatibility, exact reviewed runtime code hashes, and the runnable
+package-subpath consumer example. `npm run test:fork` additionally executes an
+SDK-built and reviewed full position close against the pinned Anvil fork
+documented in [docs/FORK_TESTING.md](./docs/FORK_TESTING.md).
+
+`npm run test:live-compatibility` rechecks both exported deployments against
+their public RPCs. `UNISWAP_MAINNET_RPC_URL` and `UNISWAP_TESTNET_RPC_URL` may
+override those read-only endpoints.
 
 Releases use the versioned Reptilian publisher, exact main-ancestry tags,
 immutable archive verification, and retained evidence; see [RELEASING.md](./RELEASING.md).
@@ -149,7 +156,7 @@ The v3 surface is capital-moving protocol support: it prepares unsigned calldata
 and verifies protocol-specific transaction and receipt facts. It does not grant
 authorization or submit transactions. The v4 surface remains read-only and does
 not claim Arc deployment or custom-hook compatibility. Never treat a local test
-or a successful wiring check as live-chain bytecode provenance.
+or a successful wiring check as source verification.
 
 Next: supply Arc contract/RPC details, verify code and hook/custody semantics,
 then add its adapter and a tested managed-position lifecycle. Existing v3-only
