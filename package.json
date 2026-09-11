@@ -1,6 +1,6 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
   "license": "UNLICENSED",
   "type": "module",
