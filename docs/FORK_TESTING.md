@@ -15,7 +15,8 @@ mainnet endpoint, and run:
 UNISWAP_FORK_RPC_URL=https://example.invalid npm run test:fork
 ```
 
-The public Robinhood RPC serves current state but does not retain the pinned
-historical metadata. The fork RPC must retain block `60269962`; the script fails
-closed if its block hash, deployment code, wiring, position owner, or liquidity
-has changed. No private key is used and all state changes remain inside Anvil.
+The public Robinhood RPC served the pinned fork during this review, but its
+long-term historical retention is not contractual. Use an archive-capable RPC
+if that endpoint stops serving block `60269962`. The script fails closed if the
+block hash, deployment code, wiring, position owner, or liquidity has changed.
+No private key is used and all state changes remain inside Anvil.
