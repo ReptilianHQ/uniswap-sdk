@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const PUBLISHER_VERSION = '1.2.1';
+export const PUBLISHER_VERSION = '1.2.2';
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const run = (cmd, args, cwd = process.cwd()) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 const safePath = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes('\\') && !value.split('/').includes('..');
@@ -96,6 +96,9 @@ export function registryLookup(spec, registry) {
   const result = spawnSync('npm', ['view', spec, '--json', '--registry', registry], { cwd: tmpdir(), encoding: 'utf8' });
   if (result.error) throw result.error;
   if (result.status === 0) {
+    // GitHub Packages reports a missing exact stable version as a successful
+    // command with empty stdout when prerelease versions already exist.
+    if (result.stdout.trim() === '') return null;
     const parsed = JSON.parse(result.stdout);
     assert.ok(parsed && !Array.isArray(parsed), `Unexpected registry response for ${spec}`);
     return parsed;
