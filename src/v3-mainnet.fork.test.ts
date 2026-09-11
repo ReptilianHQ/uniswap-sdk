@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { createPublicClient, http, type Hex } from 'viem';
+import { createPublicClient, decodeFunctionResult, http, type Hex } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { verifyUniswapV3Compatibility } from './compatibility.js';
 import { robinhoodUniswapV3Mainnet } from './deployments.js';
@@ -58,6 +58,27 @@ describe.skipIf(!forkUrl)('Uniswap v3 Robinhood mainnet fork', () => {
         burned: true,
       });
 
+      const simulation = await publicClient.simulateContract({
+        address: manager,
+        abi: v3PositionManagerAbi,
+        functionName: 'multicall',
+        args: [material.calls],
+        account: POSITION_OWNER,
+      });
+      const [decreaseResult, collectResult] = simulation.result;
+      const [principal0, principal1] = decodeFunctionResult({
+        abi: v3PositionManagerAbi,
+        functionName: 'decreaseLiquidity',
+        data: decreaseResult,
+      });
+      const [quotedAmount0Collected, quotedAmount1Collected] = decodeFunctionResult({
+        abi: v3PositionManagerAbi,
+        functionName: 'collect',
+        data: collectResult,
+      });
+      expect(quotedAmount0Collected).toBeGreaterThanOrEqual(principal0);
+      expect(quotedAmount1Collected).toBeGreaterThanOrEqual(principal1);
+
       const hash = await rpc<Hex>(localUrl, 'eth_sendTransaction', [{
         from: POSITION_OWNER,
         to: material.to,
@@ -69,7 +90,8 @@ describe.skipIf(!forkUrl)('Uniswap v3 Robinhood mainnet fork', () => {
       expect(receipt.status).toBe('success');
       const evidence = summarizeV3PositionReceipt({ logs: receipt.logs, manager, recipient: POSITION_OWNER, tokenId: POSITION_TOKEN_ID });
       expect(evidence.liquidityRemoved).toBe(liquidity);
-      expect(evidence.amount0Collected > 0n || evidence.amount1Collected > 0n).toBe(true);
+      expect(evidence.amount0Collected).toBe(quotedAmount0Collected);
+      expect(evidence.amount1Collected).toBe(quotedAmount1Collected);
       expect(evidence.burned).toBe(true);
       await expect(publicClient.readContract({ address: manager, abi: v3PositionManagerAbi, functionName: 'ownerOf', args: [POSITION_TOKEN_ID] })).rejects.toThrow();
     } finally {
