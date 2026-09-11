@@ -1,15 +1,20 @@
-# Shared Uniswap v4 observations
+# Shared Uniswap protocol SDK
 
-Reptilian-maintained integration SDK, released independently through GitHub Packages. No signer,
-transaction submission, liquidity management, Arc deployment, or custom-hook
-compatibility is claimed. Existing Robinhood writes and bot execution are unchanged.
+Reptilian-maintained integration SDK, released independently through GitHub Packages.
+It owns Uniswap protocol mechanics: reviewed deployments, ABI encoding and decoding,
+unsigned v3 transaction material, calldata review, receipt evidence, and v4 observations.
+It never owns keys, authorization policy, transaction submission, persistence, or orchestration.
 
 ## Capabilities and ownership
 
 - `./v4`: full pool identity, Initialize-log normalization, pool state,
   exact-input Quoter simulation, ordered quote batches, initialized tick windows.
+- `./v3`: Robinhood v3 deployment identity, compatibility checks, unsigned
+  position transaction builders, strict calldata review, and receipt evidence.
+- `./deployments`, `./compatibility`, `./transactions`, `./receipts`: stable
+  capability subpaths for the capital-moving v3 surface.
 - `./batch`: host-owned multicall integration for quoting, state decoding, and tick discovery.
-- `./abis`: minimal standard v4 read/event ABI surface.
+- `./abis`: minimal v3 and v4 ABI surface used by the package.
 - `./errors`: stable error codes; JSON serialization omits underlying RPC errors,
   which may contain credentials. The in-process `cause` is diagnostic only.
 
@@ -42,13 +47,33 @@ const quote = await quoteV4ExactInput(publicClient, reviewedDeployment, poolKey,
 }, { blockNumber: pool.blockNumber });
 ```
 
+V3 hosts select an exported reviewed deployment, verify it against their RPC,
+then build unsigned transaction material. The host must independently authorize,
+simulate, sign, submit, and reconcile that material.
+
+```ts
+import {
+  buildV3IncreaseLiquidityTransaction,
+  reviewV3IncreaseLiquidityCalldata,
+  robinhoodUniswapV3Mainnet,
+  verifyUniswapV3Compatibility,
+} from '@reptilianhq/uniswap-sdk/v3';
+
+await verifyUniswapV3Compatibility(publicClient, robinhoodUniswapV3Mainnet);
+const material = buildV3IncreaseLiquidityTransaction({
+  manager: robinhoodUniswapV3Mainnet.contracts.nonfungiblePositionManager,
+  params,
+});
+reviewV3IncreaseLiquidityCalldata(material.data, params.tokenId);
+```
+
 A complete deterministic consumer example is available in
 [`examples/read-only-consumer.mjs`](./examples/read-only-consumer.mjs). It uses
 the published package subpaths and demonstrates a pool observation, a partial
 tick result, and branching on `isUniswapSdkError`.
 
-`reviewedDeployment` contains chainId, PoolManager, StateView and Quoter addresses.
-There are no implicit Robinhood or Arc deployments. Hosts own endpoint selection,
+The v4 `reviewedDeployment` contains chainId, PoolManager, StateView and Quoter addresses.
+There are no implicit v4 Robinhood or Arc deployments. Hosts own endpoint selection,
 finality, capability policy and secret storage. For multicall consumers, use
 `quoteV4WithBatch`, `v4PoolStateCalls`, `decodeV4PoolState`,
 `readV4PoolStatesWithBatch`, and `readV4TicksWithBatch` from `./batch`.
@@ -111,20 +136,20 @@ npm run check
 ```
 
 The local suite uses real viem ABI encoding/decoding over a deterministic RPC
-transport, plus official SDK identity comparisons. It covers multiple chain
+transport, plus official SDK identity comparisons and Hegel property invariants.
+It covers v3 construction/review identity, manager-scoped receipt evidence, multiple chain
 IDs, native/ERC-20 direction, dynamic-fee hook data, pointer/chain mismatch,
 partial depth, failed versus zero quotes, discovery identity, batched transport
-compatibility, and the runnable package-subpath consumer example. It does not
-establish Arc or Robinhood live compatibility.
+compatibility, and the runnable package-subpath consumer example. Local tests do
+not establish live deployment compatibility or bytecode provenance.
 
 Releases use the versioned Reptilian publisher, exact main-ancestry tags,
 immutable archive verification, and retained evidence; see [RELEASING.md](./RELEASING.md).
-This initial release is read-only. It has no write preparation, position-management,
-or receipt-verification API and does not claim Arc deployment or hook compatibility.
-The capital-moving SDK conformance profile is not applicable until those
-capabilities are implemented; never add placeholder transaction/receipt exports
-or treat a local test as live-chain compatibility. The local suite and packed
-runtime/type checks cover the read-only surface actually released.
+The v3 surface is capital-moving protocol support: it prepares unsigned calldata
+and verifies protocol-specific transaction and receipt facts. It does not grant
+authorization or submit transactions. The v4 surface remains read-only and does
+not claim Arc deployment or custom-hook compatibility. Never treat a local test
+or a successful wiring check as live-chain bytecode provenance.
 
 Next: supply Arc contract/RPC details, verify code and hook/custody semantics,
 then add its adapter and a tested managed-position lifecycle. Existing v3-only

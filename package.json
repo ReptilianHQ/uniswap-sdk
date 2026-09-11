@@ -1,13 +1,14 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.1.0-rc.4",
-  "description": "Deployment-explicit Uniswap v4 observations and simulated quotes.",
+  "version": "0.2.0-rc.1",
+  "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
   "license": "UNLICENSED",
   "type": "module",
   "sideEffects": false,
   "files": [
     "dist",
     "examples",
+    "provenance",
     "README.md",
     "RELEASING.md",
     "NOTICE"
@@ -26,6 +27,26 @@
       "types": "./dist/v4.d.ts",
       "import": "./dist/v4.js"
     },
+    "./v3": {
+      "types": "./dist/v3.d.ts",
+      "import": "./dist/v3.js"
+    },
+    "./deployments": {
+      "types": "./dist/deployments.d.ts",
+      "import": "./dist/deployments.js"
+    },
+    "./compatibility": {
+      "types": "./dist/compatibility.d.ts",
+      "import": "./dist/compatibility.js"
+    },
+    "./transactions": {
+      "types": "./dist/transactions.d.ts",
+      "import": "./dist/transactions.js"
+    },
+    "./receipts": {
+      "types": "./dist/receipts.d.ts",
+      "import": "./dist/receipts.js"
+    },
     "./batch": {
       "types": "./dist/batch.d.ts",
       "import": "./dist/batch.js"
@@ -41,7 +62,9 @@
     "./providers": {
       "types": "./dist/providers.d.ts",
       "import": "./dist/providers.js"
-    }
+    },
+    "./provenance/mainnet.json": "./provenance/mainnet.json",
+    "./provenance/testnet.json": "./provenance/testnet.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -66,6 +89,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@eslint/js": "10.0.1",
+    "@hegeldev/hegel": "0.4.3",
     "@types/node": "24.13.2",
     "eslint": "10.6.0",
     "globals": "17.7.0",

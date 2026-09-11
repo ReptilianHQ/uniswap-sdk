@@ -18,3 +18,5 @@ export const v4QuoterAbi = parseAbi([
 export const v4PoolManagerAbi = parseAbi([
   'event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)',
 ]);
+
+export * from './v3-abis.js';

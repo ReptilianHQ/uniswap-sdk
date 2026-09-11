@@ -4,9 +4,11 @@ Use Node 24 or 26 and the pinned npm version; CI verifies both supported consume
 installable; no parent-relative imports or platform configuration dependencies.
 Run `npm ci --ignore-scripts` and `npm run check` before releasing.
 
-The initial API is read-only. Do not imply deployment/hook compatibility from a
-standard ABI or successful pointer check. Preserve chain, manager, PoolKey,
-currency orientation, hook data, observation block and partial failures.
+The v4 API is read-only. The v3 API may construct unsigned transaction material
+and verify calldata and receipt evidence. Do not imply bytecode or hook
+compatibility from a standard ABI or successful pointer check. Preserve chain,
+manager, PoolKey, currency orientation, hook data, observation block and partial
+failures.
 
 Publish through the shared versioned artifact publisher as documented in
 RELEASING.md. Preserve immutable tags, main ancestry and exact consumer pins.

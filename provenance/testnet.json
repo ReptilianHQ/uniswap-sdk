@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "robinhood-testnet-v3",
+  "chainId": 46630,
+  "reviewedAt": "2026-09-11",
+  "abiRevision": "uniswap-v3-core-periphery-1.0.0",
+  "provenance": "reviewed-testnet",
+  "explorerVerification": "partial",
+  "contracts": {
+    "factory": "0xdf9e3D6ffaC4513dD7b053212bbECcbCD15ec932",
+    "nonfungiblePositionManager": "0xFFe6CFc4f759b65f9B62c9D05A9E21a78cE93e12",
+    "quoterV2": "0xDDcBe4989C8171F721c5e683C9C6339B59718213",
+    "swapRouter02": "0xb79cB26e90EBBD9bC02c75267c9a86dBa1AFedB7",
+    "wrappedNative": "0x7943e237c7F95DA44E0301572D358911207852Fa",
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11"
+  },
+  "limitations": [
+    "The factory and position manager were reviewed against pinned Uniswap v3 source artifacts; the remaining addresses have partial explorer verification.",
+    "Runtime bytecode hashes are not pinned by this record and require separate release evidence."
+  ]
+}

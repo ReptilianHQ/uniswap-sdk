@@ -123,8 +123,11 @@ export async function readV4TicksWithBatch(transport: V4BatchTransport, stateVie
   const failedTicks: number[] = [];
   const coordinates: number[] = [];
   bitmaps.forEach((result, i) => {
+    if (!result.success) {
+      failedWords.push(unique[i]);
+      return;
+    }
     try {
-      if (!result.success) throw new Error('Missing bitmap');
       coordinates.push(...ticksInWord(unique[i], decodeFunctionResult({ abi: v4StateViewAbi, functionName: 'getTickBitmap', data: result.returnData }), tickSpacing));
     } catch { failedWords.push(unique[i]); }
   });
@@ -133,8 +136,11 @@ export async function readV4TicksWithBatch(transport: V4BatchTransport, stateVie
     const chunk = coordinates.slice(offset, offset + 256);
     const results = await batch(transport, chunk.map(tick => ({ target, allowFailure: true, callData: encodeFunctionData({ abi: v4StateViewAbi, functionName: 'getTickLiquidity', args: [poolId, tick] }) })));
     results.forEach((result, i) => {
+      if (!result.success) {
+        failedTicks.push(chunk[i]);
+        return;
+      }
       try {
-        if (!result.success) throw new Error('Missing tick');
         const [liquidityGross, liquidityNet] = decodeFunctionResult({ abi: v4StateViewAbi, functionName: 'getTickLiquidity', data: result.returnData });
         ticks.push({ tick: chunk[i], liquidityGross, liquidityNet });
       } catch { failedTicks.push(chunk[i]); }
