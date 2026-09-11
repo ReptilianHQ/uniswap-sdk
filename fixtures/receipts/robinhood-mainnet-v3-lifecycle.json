@@ -8,6 +8,7 @@
   "transactionHash": "0x011845afe62d555d6667a6f8e3b5cf4d60152bac613d04853d879f58b60e1e15",
   "blockHash": "0x53bab62a1495b95392570d5fb20aa1c1d5fa9f868839f71ed080b82b1d68b6df",
   "blockNumber": 60175962,
+  "status": "success",
   "manager": "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
   "recipient": "0x62c327a39c84ca646044B28Aa169cAeCDE318960",
   "closedTokenId": "1127306",

@@ -15,13 +15,25 @@ type ReceiptFixture = {
   transactionHash: Hex;
   blockHash: Hex;
   blockNumber: number;
+  status: 'success';
   manager: Address;
   recipient: Address;
   tokenId?: string;
   closedTokenId?: string;
   mintedTokenId?: string;
   logs: V3ReceiptLog[];
-  expected: Record<string, unknown>;
+  expected: {
+    mintedTokenId?: string;
+    liquidityAdded?: string;
+    amount0Added?: string;
+    amount1Added?: string;
+    closed?: {
+      liquidityRemoved: string; amount0Collected: string; amount1Collected: string; burned: boolean;
+    };
+    minted?: {
+      liquidityAdded: string; amount0Added: string; amount1Added: string;
+    };
+  };
 };
 
 function fixture(name: string): ReceiptFixture {
@@ -37,6 +49,7 @@ function assertProvenance(value: ReceiptFixture): void {
   expect(value.recordedHead - value.blockNumber).toBeGreaterThanOrEqual(value.minimumFinalityDepth);
   expect(value.transactionHash).toMatch(/^0x[0-9a-f]{64}$/);
   expect(value.blockHash).toMatch(/^0x[0-9a-f]{64}$/);
+  expect(value.status).toBe('success');
 }
 
 describe('pinned finalized Robinhood mainnet receipts', () => {
@@ -44,11 +57,11 @@ describe('pinned finalized Robinhood mainnet receipts', () => {
     const value = fixture('robinhood-mainnet-v3-mint');
     assertProvenance(value);
     const tokenId = BigInt(value.tokenId!);
-    expect(findV3MintedPositionTokenId({ logs: value.logs, manager: value.manager, recipient: value.recipient })).toBe(tokenId);
+    expect(findV3MintedPositionTokenId({ logs: value.logs, manager: value.manager, recipient: value.recipient })).toBe(BigInt(value.expected.mintedTokenId!));
     expect(summarizeV3PositionReceipt({ logs: value.logs, manager: value.manager, recipient: value.recipient, tokenId })).toEqual({
-      liquidityAdded: 9_080_828_397_494_115_660n,
-      amount0Added: 98_202_793_803_044_062_283n,
-      amount1Added: 7_821_750_973_834_156n,
+      liquidityAdded: BigInt(value.expected.liquidityAdded!),
+      amount0Added: BigInt(value.expected.amount0Added!),
+      amount1Added: BigInt(value.expected.amount1Added!),
       liquidityRemoved: 0n,
       amount0Collected: 0n,
       amount1Collected: 0n,
@@ -61,20 +74,22 @@ describe('pinned finalized Robinhood mainnet receipts', () => {
     assertProvenance(value);
     const closedTokenId = BigInt(value.closedTokenId!);
     const mintedTokenId = BigInt(value.mintedTokenId!);
+    const closed = value.expected.closed!;
+    const minted = value.expected.minted!;
     expect(findV3MintedPositionTokenId({ logs: value.logs, manager: value.manager, recipient: value.recipient })).toBe(mintedTokenId);
     expect(summarizeV3PositionReceipt({ logs: value.logs, manager: value.manager, recipient: value.recipient, tokenId: closedTokenId })).toEqual({
       liquidityAdded: 0n,
       amount0Added: 0n,
       amount1Added: 0n,
-      liquidityRemoved: 9_433_219_015_305_506_097n,
-      amount0Collected: 165_918_405_172_525n,
-      amount1Collected: 250_080_047_057_793_478_599n,
-      burned: true,
+      liquidityRemoved: BigInt(closed.liquidityRemoved),
+      amount0Collected: BigInt(closed.amount0Collected),
+      amount1Collected: BigInt(closed.amount1Collected),
+      burned: closed.burned,
     });
     expect(summarizeV3PositionReceipt({ logs: value.logs, manager: value.manager, recipient: value.recipient, tokenId: mintedTokenId })).toMatchObject({
-      liquidityAdded: 9_475_922_674_326_428_363n,
-      amount0Added: 2_063_438_017_480_703n,
-      amount1Added: 145_801_849_036_816_553_390n,
+      liquidityAdded: BigInt(minted.liquidityAdded),
+      amount0Added: BigInt(minted.amount0Added),
+      amount1Added: BigInt(minted.amount1Added),
     });
   });
 });
