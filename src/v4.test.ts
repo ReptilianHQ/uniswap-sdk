@@ -72,6 +72,23 @@ describe('v4 pool identity', () => {
       expect(isUniswapSdkError(error)).toBe(true);
       expect(error).toMatchObject({ code: 'INVALID_ARGUMENT', message: 'Pool currencies must be distinct' });
     }
+    try {
+      poolKeyFromCurrencies(
+        new Token(1, token, 18),
+        new Token(1, other, 18),
+        3000,
+        60,
+        'not-an-address' as Address,
+      );
+      expect.unreachable('upstream validation failures must be normalized');
+    } catch (error) {
+      expect(isUniswapSdkError(error)).toBe(true);
+      expect(error).toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: 'Official Uniswap SDK rejected the pool parameters',
+        cause: expect.any(Error),
+      });
+    }
   });
   it('does not confuse identical pool IDs on different managers or chains', () => {
     const first = poolReference(deployment, key);
