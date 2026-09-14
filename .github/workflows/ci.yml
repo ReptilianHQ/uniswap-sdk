@@ -1,15 +1,17 @@
 name: SDK checks
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: uniswap-sdk-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     strategy:
       matrix:
-        node: [24, 26]
+        node: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[24,26]' || '[24]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
