@@ -12,7 +12,7 @@ env:
   ARTIFACT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('uniswap-sdk-v{0}', inputs.version) || github.ref_name }}
 permissions:
   contents: read
-  packages: write
+  id-token: write
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -32,6 +32,10 @@ jobs:
           node-version: '24'
           cache: npm
       - name: Pin npm
+        # npm >= 11.5.1 is required for OIDC Trusted Publishing (used by the
+        # publish step below). setup-node only rewrites registry config on
+        # its second invocation later in this job; it does not reinstall npm,
+        # so this pin stays in effect for the rest of the job.
         run: npm install --global npm@11.5.2
       - name: Verify source belongs to main
         run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
@@ -44,12 +48,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-          registry-url: https://npm.pkg.github.com
+          registry-url: https://registry.npmjs.org
           scope: '@reptilianhq'
       - name: Publish and verify immutable artifacts
         run: node scripts/artifacts/publisher.mjs publish uniswap-sdk "${RUNNER_TEMP}/release"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain release evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
