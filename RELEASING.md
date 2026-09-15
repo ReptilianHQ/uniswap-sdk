@@ -31,11 +31,14 @@ scope that has never published:
    — this repo has no `.npmrc`, and one placed in the repo root would be
    ignored. Revoke the token once this succeeds.
 4. On the package's npmjs.org settings, add this repository and
-   `.github/workflows/publish.yml` as a Trusted Publisher, and set it to
+   `.github/workflows/publish.yml` as a Trusted Publisher, scoped to the
+   `npm` GitHub environment — matching the convention already used by other
+   `@reptilianhq` packages (e.g. `launch-on-block-sdk`) — and set it to
    **always publish** rather than the staged/approval default — the publisher
    script (`scripts/artifacts/publisher.mjs`) runs a plain `npm publish` with
    no support for a staged-approval step, so a staged config will hang the
-   workflow.
+   workflow. The `npm` environment does not need to exist on this repo ahead
+   of time; GitHub creates it automatically the first time the workflow runs.
 
 After that one-time setup, every subsequent release goes through the tagged
 CI flow below with no token in the repository.

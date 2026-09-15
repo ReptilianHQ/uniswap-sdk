@@ -16,6 +16,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: npm
     timeout-minutes: 30
     concurrency:
       group: artifact-publish-uniswap-sdk
