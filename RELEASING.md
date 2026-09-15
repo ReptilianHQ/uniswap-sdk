@@ -31,11 +31,22 @@ scope that has never published:
    — this repo has no `.npmrc`, and one placed in the repo root would be
    ignored. Revoke the token once this succeeds.
 4. On the package's npmjs.org settings, add this repository and
-   `.github/workflows/publish.yml` as a Trusted Publisher, and set it to
-   **always publish** rather than the staged/approval default — the publisher
-   script (`scripts/artifacts/publisher.mjs`) runs a plain `npm publish` with
-   no support for a staged-approval step, so a staged config will hang the
+   `.github/workflows/publish.yml` as a Trusted Publisher. Optionally scope
+   it to the `npm` GitHub environment name — matching `launch-on-block-sdk`
+   — but this is optional metadata on npm's side; leaving it unscoped works
+   too. Set the Trusted Publisher itself to **always publish** rather than
+   the staged/approval default — the publisher script
+   (`scripts/artifacts/publisher.mjs`) runs a plain `npm publish` with no
+   support for a staged-approval step, so a staged config will hang the
    workflow.
+5. The `npm` GitHub environment referenced by the job does not need to exist
+   on this repo ahead of time; GitHub creates it automatically the first time
+   the workflow runs. **Leave it with no protection rules** (no required
+   reviewers, no wait timer) — `launch-on-block-sdk`'s own `npm` environment
+   has a required-reviewer rule, but copying that here would reintroduce the
+   same staged-approval hang from step 4, just via GitHub's environment gate
+   instead of npm's. `timeout-minutes: 30` on the job bounds execution time,
+   not an approval wait, so a gated run would park rather than fail loudly.
 
 After that one-time setup, every subsequent release goes through the tagged
 CI flow below with no token in the repository.
