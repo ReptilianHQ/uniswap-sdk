@@ -32,6 +32,10 @@ jobs:
           node-version: '24'
           cache: npm
       - name: Pin npm
+        # npm >= 11.5.1 is required for OIDC Trusted Publishing (used by the
+        # publish step below). setup-node only rewrites registry config on
+        # its second invocation later in this job; it does not reinstall npm,
+        # so this pin stays in effect for the rest of the job.
         run: npm install --global npm@11.5.2
       - name: Verify source belongs to main
         run: git merge-base --is-ancestor HEAD refs/remotes/origin/main

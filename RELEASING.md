@@ -1,10 +1,31 @@
 # Uniswap SDK releases
 
-This repository owns `@reptilianhq/uniswap-sdk`. Publish to restricted GitHub
-Packages using the same Reptilian artifact publisher 1.2.2 used by the other
+This repository owns `@reptilianhq/uniswap-sdk`. Publish to the public npm
+registry using the same Reptilian artifact publisher 1.2.2 used by the other
 standalone package owners. `scripts/artifacts/publisher.lock.json` pins the
 canonical publisher bytes; update them from the Reptilian root's vendor command.
 Do not edit the emitted publisher locally.
+
+## One-time npm setup
+
+The publish workflow authenticates via npm OIDC Trusted Publishing
+(`id-token: write`, no static token). Trusted Publishing is configured on an
+*existing* npm package, so it cannot be the very first thing you set up for a
+scope that has never published:
+
+1. Create/claim the `@reptilianhq` org on npmjs.org if it does not exist yet.
+2. Publish the first version by hand with a temporary granular access token
+   (`npm publish --access public` from a clean checkout), then revoke that
+   token.
+3. On the package's npmjs.org settings, add this repository and
+   `.github/workflows/publish.yml` as a Trusted Publisher, and set it to
+   **always publish** rather than the staged/approval default — the publisher
+   script (`scripts/artifacts/publisher.mjs`) runs a plain `npm publish` with
+   no support for a staged-approval step, so a staged config will hang the
+   workflow.
+
+After that one-time setup, every subsequent release goes through the tagged
+CI flow below with no token in the repository.
 
 ## Release verification
 
@@ -34,6 +55,16 @@ Publication evidence is retained for 90 days as `release-record.json` and
 `verification.json`. A manual dispatch with the same exact version retries the
 same tag. Existing registry content must have matching source and archive bytes.
 If it differs, fix the source and publish a new numbered RC.
+
+On the public npm registry, automatic dist-tag/channel repair for an
+interrupted publish (version published, channel not yet moved) is not
+available — npm OIDC only authorizes the publish itself, not tag repair.
+If a run is interrupted after the version lands but before its channel moves,
+fix the dist-tag by hand (`npm dist-tag add <pkg>@<version> <channel>`) rather
+than relying on retry. If OIDC authentication itself is misconfigured (no
+Trusted Publisher entry for this repo/workflow, or it is set to staged
+rather than always-publish), `npm publish` fails with a plain E401/E403 with
+no specific OIDC diagnostic — check the npmjs.org package settings first.
 
 ## Local fallback
 
