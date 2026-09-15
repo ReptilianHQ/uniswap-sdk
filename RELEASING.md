@@ -14,10 +14,11 @@ The publish workflow authenticates via npm OIDC Trusted Publishing
 scope that has never published:
 
 1. Create/claim the `@reptilianhq` org on npmjs.org if it does not exist yet.
-2. Land the version on `main` and push its tag (`uniswap-sdk-v0.2.1`) as
-   usual. This triggers `publish.yml` automatically — let it fail; Trusted
-   Publishing cannot exist yet, so it will error on a plain E401/E403. That
-   is expected for the bootstrap version only.
+2. Land the version on `main` and push its tag (`uniswap-sdk-v0.2.2`, the
+   first version targeting the public registry) as usual. This triggers
+   `publish.yml` automatically — let it fail; Trusted Publishing cannot exist
+   yet, so it will error on a plain E401/E403. That is expected for the
+   bootstrap version only.
 3. Publish that same tagged version yourself with a temporary org-scoped
    access token (a granular token cannot target a package that doesn't exist
    yet), using the **Local fallback** publisher flow below (`publisher.mjs
@@ -67,8 +68,8 @@ amounts to match the simulation. Run `npm run test:live-compatibility` before re
 recheck both deployment records. Runtime code identity is not source verification or
 custom-hook compatibility. Arc details remain unavailable.
 
-Set one exact version such as `0.2.1` in package.json and package-lock.json,
-land the source on main, then push its immutable tag `uniswap-sdk-v0.2.1`.
+Set one exact version such as `<version>` in package.json and package-lock.json,
+land the source on main, then push its immutable tag `uniswap-sdk-v<version>`.
 The publish workflow verifies version identity and main ancestry, reruns package
 checks, prepares archives and source metadata, publishes the archive without
 rerunning lifecycle scripts, and verifies the registry metadata and downloaded
@@ -96,8 +97,8 @@ When CI minutes are unavailable, run the same checks locally and use the same
 publisher, from a clean tagged checkout with origin/main fetched:
 
 ```sh
-ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.1 node scripts/artifacts/publisher.mjs prepare uniswap-sdk .release
-ARTIFACT_RELEASE_TAG=uniswap-sdk-v0.2.1 node scripts/artifacts/publisher.mjs publish uniswap-sdk .release
+ARTIFACT_RELEASE_TAG=uniswap-sdk-v<version> node scripts/artifacts/publisher.mjs prepare uniswap-sdk .release
+ARTIFACT_RELEASE_TAG=uniswap-sdk-v<version> node scripts/artifacts/publisher.mjs publish uniswap-sdk .release
 ```
 
 Registry credentials must already be configured; do not print tokens or put
