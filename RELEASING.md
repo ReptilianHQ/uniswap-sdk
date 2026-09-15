@@ -14,9 +14,14 @@ The publish workflow authenticates via npm OIDC Trusted Publishing
 scope that has never published:
 
 1. Create/claim the `@reptilianhq` org on npmjs.org if it does not exist yet.
-2. Publish the first version by hand with a temporary granular access token
-   (`npm publish --access public` from a clean checkout), then revoke that
-   token.
+2. Publish the first version with a temporary granular access token using the
+   **Local fallback** publisher flow below (`publisher.mjs prepare` then
+   `publish`), not a raw `npm publish`. `prepare` injects the
+   `reptilianRelease` manifest metadata and repacks the tarball; a
+   hand-published tarball would be missing that and would permanently fail
+   CI's immutable-byte check on every later run for that same version, since
+   the only recovery for a byte mismatch is a new numbered RC. Revoke the
+   token once the local publish succeeds.
 3. On the package's npmjs.org settings, add this repository and
    `.github/workflows/publish.yml` as a Trusted Publisher, and set it to
    **always publish** rather than the staged/approval default — the publisher
