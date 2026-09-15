@@ -2,7 +2,7 @@
   "name": "@reptilianhq/uniswap-sdk",
   "version": "0.2.1",
   "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "files": [
@@ -15,7 +15,8 @@
     "scripts/verify-v3-deployments.mjs",
     "README.md",
     "RELEASING.md",
-    "NOTICE"
+    "NOTICE",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=24"
@@ -111,8 +112,8 @@
     "url": "git+https://github.com/ReptilianHQ/uniswap-sdk.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "packageManager": "npm@11.5.2"
 }
