@@ -14,15 +14,23 @@ The publish workflow authenticates via npm OIDC Trusted Publishing
 scope that has never published:
 
 1. Create/claim the `@reptilianhq` org on npmjs.org if it does not exist yet.
-2. Publish the first version with a temporary granular access token using the
-   **Local fallback** publisher flow below (`publisher.mjs prepare` then
-   `publish`), not a raw `npm publish`. `prepare` injects the
+2. Land the version on `main` and push its tag (`uniswap-sdk-v0.2.1`) as
+   usual. This triggers `publish.yml` automatically — let it fail; Trusted
+   Publishing cannot exist yet, so it will error on a plain E401/E403. That
+   is expected for the bootstrap version only.
+3. Publish that same tagged version yourself with a temporary org-scoped
+   access token (a granular token cannot target a package that doesn't exist
+   yet), using the **Local fallback** publisher flow below (`publisher.mjs
+   prepare` then `publish`) — not a raw `npm publish`. `prepare` injects the
    `reptilianRelease` manifest metadata and repacks the tarball; a
    hand-published tarball would be missing that and would permanently fail
    CI's immutable-byte check on every later run for that same version, since
-   the only recovery for a byte mismatch is a new numbered RC. Revoke the
-   token once the local publish succeeds.
-3. On the package's npmjs.org settings, add this repository and
+   the only recovery for a byte mismatch is a new numbered RC. The publisher
+   shells out to `npm publish`/`npm dist-tag` from a temp directory, so put
+   the token in `~/.npmrc` (or `NPM_CONFIG_//registry.npmjs.org/:_authToken`)
+   — this repo has no `.npmrc`, and one placed in the repo root would be
+   ignored. Revoke the token once this succeeds.
+4. On the package's npmjs.org settings, add this repository and
    `.github/workflows/publish.yml` as a Trusted Publisher, and set it to
    **always publish** rather than the staged/approval default — the publisher
    script (`scripts/artifacts/publisher.mjs`) runs a plain `npm publish` with
