@@ -265,4 +265,37 @@ describe('v4 mint with a Permit2 batch approval', () => {
       batchPermit: { owner: batchPermit.owner, spender: batchPermit.permitBatch.spender, sigDeadline: batchPermit.permitBatch.sigDeadline, details: [{ ...batchPermit.permitBatch.details[0]!, amount: 1n }] },
     })).toThrow(/does not match what was expected/);
   });
+
+  it('rejects a calldata permit whose details are a duplicated entry matched against two distinct expected details', () => {
+    // A weaker "every actual detail matches some expected detail" check would wrongly pass
+    // here: both (identical) actual entries match expectedA, so the length (2 vs 2) and
+    // per-entry containment both look satisfied even though expectedB was never authorized.
+    const detailA = { token: token.address as Address, amount: 1_000_000n, expiration: 9_999_999_999n, nonce: 0n };
+    const detailB = { token: other.address as Address, amount: 2_000_000n, expiration: 9_999_999_999n, nonce: 1n };
+    const forgedPermitCall = encodeFunctionData({
+      abi: v4PositionManagerAbi, functionName: 'permitBatch',
+      args: [recipient, {
+        details: [
+          { ...detailA, expiration: Number(detailA.expiration), nonce: Number(detailA.nonce) },
+          { ...detailA, expiration: Number(detailA.expiration), nonce: Number(detailA.nonce) },
+        ],
+        spender: positionManager,
+        sigDeadline: baseParams.deadlineSeconds,
+      }, '0x1234'],
+    });
+    const mintParams = encodeAbiParameters(mintPositionParamTypes, [
+      { currency0: token.address as Address, currency1: other.address as Address, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks },
+      baseParams.tickLower, baseParams.tickUpper, baseParams.liquidity, (1n << 128n) - 1n, (1n << 128n) - 1n, recipient, '0x',
+    ]);
+    const settleParams = encodeAbiParameters(settlePairParamTypes, [token.address as Address, other.address as Address]);
+    const mintCall = encodeRawActions([{ id: 2, params: mintParams }, { id: 13, params: settleParams }], baseParams.deadlineSeconds);
+    const forged = encodeFunctionData({ abi: v4PositionManagerAbi, functionName: 'multicall', args: [[forgedPermitCall, mintCall]] });
+
+    const expected = {
+      currency0: token.address as Address, currency1: other.address as Address,
+      fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient,
+      batchPermit: { owner: recipient, spender: positionManager, sigDeadline: baseParams.deadlineSeconds, details: [detailA, detailB] },
+    };
+    expect(() => reviewV4MintPositionCalldata(forged, expected)).toThrow();
+  });
 });

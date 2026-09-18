@@ -196,6 +196,23 @@ function samePoolKey(a: V4PoolKeyMaterial, b: V4PoolKeyMaterial): boolean {
     && a.fee === b.fee && a.tickSpacing === b.tickSpacing && same(a.hooks, b.hooks);
 }
 
+/**
+ * A 1:1 pairing, not "every actual detail matches some expected detail" — that weaker check
+ * would let `[A, A]` pass against `expected = [A, B]` (both actual entries match A; lengths
+ * happen to agree), silently ignoring that B was never actually authorized and A appears twice.
+ */
+function sameBatchPermitDetails(actual: readonly V4BatchPermitDetail[], expected: readonly V4BatchPermitDetail[]): boolean {
+  if (actual.length !== expected.length) return false;
+  const remaining = expected.slice();
+  for (const detail of actual) {
+    const index = remaining.findIndex(candidate => same(candidate.token, detail.token)
+      && candidate.amount === detail.amount && candidate.expiration === detail.expiration && candidate.nonce === detail.nonce);
+    if (index === -1) return false;
+    remaining.splice(index, 1);
+  }
+  return true;
+}
+
 export type V4ExpectedMint = V4PoolKeyMaterial & {
   recipient: Address;
   /**
@@ -218,10 +235,11 @@ export type V4ExpectedMint = V4PoolKeyMaterial & {
 /**
  * Decodes and verifies calldata built by `buildV4MintPositionTransaction`: a
  * `modifyLiquidities` call — optionally wrapped in a `multicall` alongside pool
- * initialization — encoding exactly a MINT_POSITION action, a SETTLE_PAIR, and,
- * for a native-currency0 mint, a trailing SWEEP. This is the only action shape
- * that function produces; any other sequence is calldata this decoder does not
- * recognise as its own and refuses, rather than guessing at its meaning.
+ * initialization and/or a Permit2 batch approval — encoding exactly a MINT_POSITION
+ * action, a SETTLE_PAIR, and, for a native-currency0 mint, a trailing SWEEP. This is
+ * the only action shape that function produces; any other sequence is calldata this
+ * decoder does not recognise as its own and refuses, rather than guessing at its
+ * meaning.
  *
  * `expected` must name the full pool (including `hooks`), not just the token
  * pair — a mint into the same pair through a different, unreviewed hook is a
@@ -231,7 +249,10 @@ export type V4ExpectedMint = V4PoolKeyMaterial & {
  * `V4PoolKey`/`Pool` represent it elsewhere in this SDK — this function does
  * not reorder or reinterpret them. Pass `sqrtPriceX96` when the mint might
  * atomically create the pool; omitting it fails closed rather than silently
- * accepting whatever starting price the calldata sets.
+ * accepting whatever starting price the calldata sets. Pass `batchPermit` when
+ * the mint might fold in a Permit2 approval, for the same reason — a decoded
+ * permit's token/owner/spender are also self-checked against the pool regardless
+ * of what `expected` claims.
  */
 export function reviewV4MintPositionCalldata(data: Hex, expected: V4ExpectedMint): V4MintActionParams {
   try {
@@ -313,17 +334,28 @@ export function reviewV4MintPositionCalldata(data: Hex, expected: V4ExpectedMint
     }
 
     if (batchPermit) {
+      // Self-checked against the decoded poolKey regardless of what `expected` claims, so a
+      // caller who fails to scrutinize `expected` still can't be tricked into treating a permit
+      // for an unrelated or duplicated token as reviewed.
+      const poolTokens = [poolKey.currency0, poolKey.currency1];
+      const seenTokens = new Set<string>();
+      for (const detail of batchPermit.details) {
+        if (same(detail.token, zeroAddress)) mismatch('Permit2 batch approval cannot cover the native currency');
+        if (!poolTokens.some(poolToken => same(poolToken, detail.token))) {
+          mismatch('Permit2 batch approval references a token that is not part of the minted pool');
+        }
+        const key = detail.token.toLowerCase();
+        if (seenTokens.has(key)) mismatch('Permit2 batch approval lists the same token more than once');
+        seenTokens.add(key);
+      }
+
       if (!expected.batchPermit) {
         mismatch('Mint calldata includes a Permit2 batch approval but no expected approval was supplied to verify it');
       }
-      const expectedDetails = expected.batchPermit.details;
-      const sameDetails = batchPermit.details.length === expectedDetails.length
-        && batchPermit.details.every(detail => expectedDetails.some(expectedDetail => same(expectedDetail.token, detail.token)
-          && expectedDetail.amount === detail.amount && expectedDetail.expiration === detail.expiration && expectedDetail.nonce === detail.nonce));
       if (!same(batchPermit.owner, expected.batchPermit.owner)
         || !same(batchPermit.spender, expected.batchPermit.spender)
         || batchPermit.sigDeadline !== expected.batchPermit.sigDeadline
-        || !sameDetails) {
+        || !sameBatchPermitDetails(batchPermit.details, expected.batchPermit.details)) {
         mismatch('Mint calldata\'s Permit2 batch approval does not match what was expected');
       }
     }
