@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getV4PoolId } from './pool.js';
-import { buildV4PoolSubscriptions, verifyV4ProviderPool, type V4ProviderDescriptor, type V4ProviderPool } from './providers.js';
+import { buildV4PoolSubscriptions, verifyV4ProviderDescriptor, verifyV4ProviderPool, type V4ProviderDescriptor, type V4ProviderPool } from './providers.js';
 import { encodeEventTopics, parseAbi, type Hex } from 'viem';
 const addr = (n: number) => `0x${n.toString(16).padStart(40, '0')}` as const;
 const hash = (n: number) => `0x${n.toString(16).padStart(64, '0')}` as Hex;
@@ -62,5 +62,19 @@ describe('selective provider subscriptions', () => {
   it('rejects contradictory membership checkpoints instead of hiding a reorg', () => {
     const alternative = pool(); alternative.membership.blockHash = hash(8);
     expect(() => buildV4PoolSubscriptions(provider, [pool(), alternative], options)).toThrow(/Conflicting/);
+  });
+});
+
+describe('provider hook permission modelling', () => {
+  // addr(2)'s low 14 bits are 0x0002 -> afterAddLiquidityReturnsDelta only.
+  it('is unaffected when a provider has not declared a modelled set', () => {
+    expect(() => verifyV4ProviderDescriptor(provider)).not.toThrow();
+  });
+  it('passes once the provider declares every flag its hooks implement', () => {
+    expect(() => verifyV4ProviderDescriptor({ ...provider, modelledHookPermissions: ['afterAddLiquidityReturnsDelta'] })).not.toThrow();
+  });
+  it('rejects a provider whose hooks implement a flag missing from its modelled set', () => {
+    expect(() => verifyV4ProviderDescriptor({ ...provider, modelledHookPermissions: [] }))
+      .toThrow(/unmodelled permissions: afterAddLiquidityReturnsDelta/);
   });
 });
