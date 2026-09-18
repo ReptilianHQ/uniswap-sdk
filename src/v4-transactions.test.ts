@@ -128,6 +128,13 @@ describe('v4 mint transaction', () => {
     expectSdkError({ ...baseParams, modelledHookPermissions: ['beforeInitialize', 'afterSwapReturnsDelta'] });
   });
 
+  it('refuses to mint into any hook when modelledHookPermissions is an empty array', () => {
+    // An empty array is truthy (so it clears the "was one supplied at all" check) and then
+    // must be treated as "the hook may implement nothing" — pinned so a refactor toward
+    // `?.length` (falsy for []) can't silently flip this to fail-open.
+    expectSdkError({ ...baseParams, modelledHookPermissions: [] });
+  });
+
   it('does not require modelledHookPermissions when the pool has no hook', () => {
     const unhookedPool: V4PoolState = { ...pool, hooks: zeroAddress };
     expect(() => buildV4MintPositionTransaction({ ...baseParams, pool: unhookedPool, modelledHookPermissions: undefined })).not.toThrow();
@@ -192,6 +199,7 @@ describe('v4 mint calldata review', () => {
       .toThrow(/no modelled permissions/);
     expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, modelledHookPermissions: ['beforeInitialize', 'afterSwapReturnsDelta'] }))
       .toThrow(/unmodelled permissions/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, modelledHookPermissions: [] })).toThrow(/unmodelled permissions/);
   });
 
   it('rejects a createPool mint whose initialization targets a different pool than the mint', () => {
