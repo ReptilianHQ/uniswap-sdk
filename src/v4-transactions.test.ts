@@ -65,9 +65,10 @@ describe('v4 mint transaction', () => {
   function expectSdkError(input: Parameters<typeof buildV4MintPositionTransaction>[0]) {
     try {
       buildV4MintPositionTransaction(input);
-      expect.unreachable(`expected ${JSON.stringify(input)} to be rejected`);
+      expect.unreachable('expected buildV4MintPositionTransaction to reject this input');
     } catch (error) {
       expect(isUniswapSdkError(error)).toBe(true);
+      expect((error as { code?: string }).code).toBe('INVALID_ARGUMENT');
     }
   }
 

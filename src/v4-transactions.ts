@@ -63,7 +63,6 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
   const recipient = checkedAddress(input.recipient);
   const slippageTolerance = slippagePercent(input.slippageToleranceBps);
 
-  let params;
   try {
     const pool = new Pool(
       input.pool.currency0,
@@ -81,7 +80,7 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
       tickLower: input.tickLower,
       tickUpper: input.tickUpper,
     });
-    params = V4PositionManager.addCallParameters(position, {
+    const params = V4PositionManager.addCallParameters(position, {
       recipient,
       createPool: input.createPool ?? false,
       ...(input.createPool ? { sqrtPriceX96: input.pool.sqrtPriceX96.toString() } : {}),
@@ -90,9 +89,9 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
       hookData: input.hookData,
       deadline: input.deadlineSeconds.toString(),
     });
+    return { to: positionManager, data: params.calldata as Hex, value: BigInt(params.value) };
   } catch (cause) {
     if (cause instanceof UniswapSdkError) throw cause;
     throw new UniswapSdkError('INVALID_ARGUMENT', 'Official Uniswap SDK rejected the mint parameters', { cause });
   }
-  return { to: positionManager, data: params.calldata as Hex, value: BigInt(params.value) };
 }
