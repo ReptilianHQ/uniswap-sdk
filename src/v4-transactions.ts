@@ -148,6 +148,18 @@ function samePoolKey(a: V4PoolKeyMaterial, b: V4PoolKeyMaterial): boolean {
     && a.fee === b.fee && a.tickSpacing === b.tickSpacing && same(a.hooks, b.hooks);
 }
 
+export type V4ExpectedMint = V4PoolKeyMaterial & {
+  recipient: Address;
+  /**
+   * Required if this mint might atomically create the pool; the only price that
+   * mint may set. Checked only in that direction: supplying it does not require
+   * the calldata to actually create the pool — a plain mint into an
+   * already-initialized pool is unaffected either way, distinguishable from a
+   * pool-creating mint by `createdAtSqrtPriceX96` being absent from the result.
+   */
+  sqrtPriceX96?: bigint;
+};
+
 /**
  * Decodes and verifies calldata built by `buildV4MintPositionTransaction`: a
  * `modifyLiquidities` call — optionally wrapped in a `multicall` alongside pool
@@ -166,11 +178,7 @@ function samePoolKey(a: V4PoolKeyMaterial, b: V4PoolKeyMaterial): boolean {
  * atomically create the pool; omitting it fails closed rather than silently
  * accepting whatever starting price the calldata sets.
  */
-export function reviewV4MintPositionCalldata(data: Hex, expected: V4PoolKeyMaterial & {
-  recipient: Address;
-  /** Required if this mint might atomically create the pool; the only price that mint may set. */
-  sqrtPriceX96?: bigint;
-}): V4MintActionParams {
+export function reviewV4MintPositionCalldata(data: Hex, expected: V4ExpectedMint): V4MintActionParams {
   try {
     const decoded = decodeFunctionData({ abi: v4PositionManagerAbi, data });
     let unlockData: Hex;
