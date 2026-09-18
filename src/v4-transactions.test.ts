@@ -50,6 +50,16 @@ const baseParams = {
   deadlineSeconds: 9_999_999_999n,
 };
 
+function expectSdkError(input: Parameters<typeof buildV4MintPositionTransaction>[0]) {
+  try {
+    buildV4MintPositionTransaction(input);
+    expect.unreachable('expected buildV4MintPositionTransaction to reject this input');
+  } catch (error) {
+    expect(isUniswapSdkError(error)).toBe(true);
+    expect((error as { code?: string }).code).toBe('INVALID_ARGUMENT');
+  }
+}
+
 describe('v4 mint transaction', () => {
   it('encodes a plain mint as modifyLiquidities with the given deadline and zero value', () => {
     const material = buildV4MintPositionTransaction(baseParams);
@@ -78,16 +88,6 @@ describe('v4 mint transaction', () => {
     const material = buildV4MintPositionTransaction({ ...baseParams, pool: nativePool });
     expect(material.value).toBeGreaterThan(0n);
   });
-
-  function expectSdkError(input: Parameters<typeof buildV4MintPositionTransaction>[0]) {
-    try {
-      buildV4MintPositionTransaction(input);
-      expect.unreachable('expected buildV4MintPositionTransaction to reject this input');
-    } catch (error) {
-      expect(isUniswapSdkError(error)).toBe(true);
-      expect((error as { code?: string }).code).toBe('INVALID_ARGUMENT');
-    }
-  }
 
   it('rejects non-positive liquidity, inverted ticks, out-of-range slippage, and createPool without a starting price as UniswapSdkError', () => {
     for (const bad of [
@@ -203,5 +203,66 @@ describe('v4 mint calldata review', () => {
     expect(() => reviewV4MintPositionCalldata('0x12345678', expected)).toThrow();
     // A real ERC20 `approve` selector — 4 bytes, no position-manager function matches it.
     expect(() => reviewV4MintPositionCalldata('0x095ea7b3', expected)).toThrow();
+  });
+});
+
+describe('v4 mint with a Permit2 batch approval', () => {
+  const batchPermit = {
+    owner: recipient,
+    permitBatch: {
+      details: [{ token: token.address as Address, amount: 1_000_000n, expiration: 9_999_999_999n, nonce: 0n }],
+      spender: positionManager,
+      sigDeadline: 9_999_999_999n,
+    },
+    signature: '0x1234' as Hex,
+  };
+
+  it('folds a permitBatch call into the mint\'s multicall, before the mint action', () => {
+    const material = buildV4MintPositionTransaction({ ...baseParams, batchPermit });
+    const decoded = decodeFunctionData({ abi: v4PositionManagerAbi, data: material.data });
+    expect(decoded.functionName).toBe('multicall');
+    const calls = (decoded.args[0] as readonly Hex[]).map(call => decodeFunctionData({ abi: v4PositionManagerAbi, data: call }));
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.functionName).toBe('permitBatch');
+    expect(calls[0]!.args[0]).toBe(recipient);
+    expect(calls[1]!.functionName).toBe('modifyLiquidities');
+  });
+
+  it('round-trips through reviewV4MintPositionCalldata, and combines with createPool as a 3-call multicall', () => {
+    const expected = {
+      currency0: token.address as Address, currency1: other.address as Address,
+      fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient,
+      batchPermit: { owner: batchPermit.owner, spender: batchPermit.permitBatch.spender, sigDeadline: batchPermit.permitBatch.sigDeadline, details: batchPermit.permitBatch.details },
+    };
+    const plain = buildV4MintPositionTransaction({ ...baseParams, batchPermit });
+    expect(reviewV4MintPositionCalldata(plain.data, expected).batchPermitOwner).toBe(recipient);
+
+    const withCreatePool = buildV4MintPositionTransaction({ ...baseParams, batchPermit, createPool: true });
+    const decoded = reviewV4MintPositionCalldata(withCreatePool.data, { ...expected, sqrtPriceX96: pool.sqrtPriceX96 });
+    expect(decoded.batchPermitOwner).toBe(recipient);
+    expect(decoded.createdAtSqrtPriceX96).toBe(pool.sqrtPriceX96);
+  });
+
+  it('rejects a batchPermit whose spender is not this positionManager, or that references a token outside the pool, as UniswapSdkError', () => {
+    expectSdkError({ ...baseParams, batchPermit: { ...batchPermit, permitBatch: { ...batchPermit.permitBatch, spender: recipient } } });
+    expectSdkError({
+      ...baseParams,
+      batchPermit: { ...batchPermit, permitBatch: { ...batchPermit.permitBatch, details: [{ ...batchPermit.permitBatch.details[0]!, token: recipient }] } },
+    });
+    expectSdkError({ ...baseParams, batchPermit: { ...batchPermit, permitBatch: { ...batchPermit.permitBatch, details: [] } } });
+    expectSdkError({
+      ...baseParams,
+      batchPermit: { ...batchPermit, permitBatch: { ...batchPermit.permitBatch, details: [batchPermit.permitBatch.details[0]!, batchPermit.permitBatch.details[0]!] } },
+    });
+  });
+
+  it('rejects review of a permitBatch mint with no expected approval, or a mismatched one', () => {
+    const material = buildV4MintPositionTransaction({ ...baseParams, batchPermit });
+    const expected = { currency0: token.address as Address, currency1: other.address as Address, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient };
+    expect(() => reviewV4MintPositionCalldata(material.data, expected)).toThrow(/no expected approval/);
+    expect(() => reviewV4MintPositionCalldata(material.data, {
+      ...expected,
+      batchPermit: { owner: batchPermit.owner, spender: batchPermit.permitBatch.spender, sigDeadline: batchPermit.permitBatch.sigDeadline, details: [{ ...batchPermit.permitBatch.details[0]!, amount: 1n }] },
+    })).toThrow(/does not match what was expected/);
   });
 });

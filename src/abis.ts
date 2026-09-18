@@ -20,9 +20,12 @@ export const v4PoolManagerAbi = parseAbi([
 ]);
 export const v4PositionManagerAbi = parseAbi([
   'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
+  'struct AllowanceTransferDetails { address token; uint160 amount; uint48 expiration; uint48 nonce; }',
+  'struct AllowanceTransferPermitBatch { AllowanceTransferDetails[] details; address spender; uint256 sigDeadline; }',
   'function initializePool(PoolKey key, uint160 sqrtPriceX96) payable returns (int24)',
   'function modifyLiquidities(bytes unlockData, uint256 deadline) payable',
   'function multicall(bytes[] data) payable returns (bytes[] results)',
+  'function permitBatch(address owner, AllowanceTransferPermitBatch permitBatch, bytes signature) payable returns (bytes err)',
 ]);
 
 export * from './v3-abis.js';
