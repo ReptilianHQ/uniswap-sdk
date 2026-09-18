@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { zeroAddress, type Address } from 'viem';
-import { decodeV4HookPermissions } from './hooks.js';
+import { decodeV4HookPermissions, unmodelledV4HookPermissions } from './hooks.js';
 
 // Real, deployed Argus v4 tax hook (argus-sdk/fixtures/arc-receipts.json, argus-sdk/provenance/mainnet.json).
 // Its low 14 bits mask to 0x2044, cross-checked against argus-sdk's own runtime assertion
@@ -40,5 +40,20 @@ describe('v4 hook permission decoding', () => {
 
   it('rejects an invalid address', () => {
     expect(() => decodeV4HookPermissions('not-an-address' as Address)).toThrow();
+  });
+});
+
+describe('unmodelled v4 hook permissions', () => {
+  it('is empty when every flag the hook sets is in the modelled set', () => {
+    expect(unmodelledV4HookPermissions(argusHook, ['beforeInitialize', 'afterSwap', 'afterSwapReturnsDelta'])).toEqual([]);
+  });
+
+  it('is empty for a hook with no permissions regardless of the modelled set', () => {
+    expect(unmodelledV4HookPermissions(zeroAddress, [])).toEqual([]);
+  });
+
+  it('names each set flag missing from a narrower modelled set', () => {
+    expect(unmodelledV4HookPermissions(argusHook, ['beforeInitialize'])).toEqual(['afterSwap', 'afterSwapReturnsDelta']);
+    expect(unmodelledV4HookPermissions(argusHook, [])).toEqual(['beforeInitialize', 'afterSwap', 'afterSwapReturnsDelta']);
   });
 });
