@@ -1,6 +1,6 @@
-import { Percent, type Currency } from '@uniswap/sdk-core';
+import type { Currency } from '@uniswap/sdk-core';
 import type { Address, Hex } from 'viem';
-import { Pool, Position, V4PositionManager } from './official-sdk.cjs';
+import { Percent, Pool, Position, V4PositionManager } from './official-sdk.cjs';
 import { checkedAddress } from './pool.js';
 import { invalid, UniswapSdkError } from './errors.js';
 
