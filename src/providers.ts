@@ -1,5 +1,6 @@
 import { getAddress, keccak256, toBytes, zeroAddress, type Address, type Hex } from 'viem';
 import { checkedAddress, getV4PoolId, type V4PoolReference } from './pool.js';
+import { unmodelledV4HookPermissions, type V4HookPermissions } from './hooks.js';
 import { invalid } from './errors.js';
 
 /** Structural contract implemented by protocol SDKs; contains no transport or signer. */
@@ -12,6 +13,15 @@ export interface V4ProviderDescriptor {
   poolManager: Address;
   startBlock: bigint;
   hooks: readonly Address[];
+  /**
+   * Permission flags this provider has reviewed across `hooks` — what its hooks
+   * are known to do (tax a swap, gate initialization, etc.), not judged here.
+   * When present, every hook in `hooks` must implement only these flags, so a
+   * provider that has not reviewed a hook's full behaviour cannot silently pass
+   * verification once that hook starts using an extra callback. Optional so a
+   * provider can adopt this check independently of every other provider.
+   */
+  modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
   discovery: {
     address: Address;
     eventSignature: string;
@@ -58,6 +68,12 @@ export function verifyV4ProviderDescriptor(provider: V4ProviderDescriptor): void
   if (!/^[A-Za-z]\w*\([^)]*\)$/.test(provider.discovery.eventSignature) || !provider.discovery.poolIdParameter) invalid('Explicit pool membership discovery is required');
   if (!provider.hooks.length) invalid('Provider must enumerate its reviewed hooks');
   provider.hooks.forEach(checkedAddress);
+  if (provider.modelledHookPermissions) {
+    for (const hookAddress of provider.hooks) {
+      const unmodelled = unmodelledV4HookPermissions(hookAddress, provider.modelledHookPermissions);
+      if (unmodelled.length) invalid(`Provider hook implements unmodelled permissions: ${unmodelled.join(', ')}`);
+    }
+  }
   if (!provider.poolEvents.length || provider.poolEvents.some(event => !Object.hasOwn(signatures, event))) invalid('Explicit supported pool events are required');
 }
 

@@ -5,3 +5,5 @@ export type { V4ReadClient, V4Observation, V4PoolSnapshot, V4QuoteInput, V4Quote
 export { readV4TickWindow, ticksInWord } from './depth.js';
 export type { V4Tick, V4TickWindow } from './depth.js';
 export { decodeV4PoolInitialization } from './events.js';
+export { decodeV4HookPermissions, unmodelledV4HookPermissions } from './hooks.js';
+export type { V4HookPermissions } from './hooks.js';
