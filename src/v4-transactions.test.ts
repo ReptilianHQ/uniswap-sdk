@@ -1,9 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { Ether, Token } from '@uniswap/sdk-core';
-import { decodeFunctionData, zeroAddress, type Address } from 'viem';
+import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, parseAbiParameters, zeroAddress, type Address, type Hex } from 'viem';
 import { v4PositionManagerAbi } from './abis.js';
-import { buildV4MintPositionTransaction, type V4PoolState } from './v4-transactions.js';
+import { buildV4MintPositionTransaction, reviewV4MintPositionCalldata, type V4PoolState } from './v4-transactions.js';
 import { isUniswapSdkError } from './errors.js';
+
+/** Hand-encodes a `modifyLiquidities` call for a crafted action sequence, bypassing
+ * buildV4MintPositionTransaction entirely — used to test that the reviewer rejects
+ * shapes the real builder would never produce, not just corrupted real output. */
+function encodeRawActions(actions: readonly { id: number; params: Hex }[], deadline: bigint): Hex {
+  const actionsBytes = ('0x' + actions.map(a => a.id.toString(16).padStart(2, '0')).join('')) as Hex;
+  const unlockData = encodeAbiParameters(parseAbiParameters('bytes actions, bytes[] params'), [actionsBytes, actions.map(a => a.params)]);
+  return encodeFunctionData({ abi: v4PositionManagerAbi, functionName: 'modifyLiquidities', args: [unlockData, deadline] });
+}
+// Deliberately re-typed rather than imported from src/v4-transactions.ts: this independently
+// pins the wire format reviewV4MintPositionCalldata must decode, so a source-side typo in the
+// ABI parameter string can't drift silently in lockstep on both sides of the same test.
+const mintPositionParamTypes = parseAbiParameters(
+  '(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, int24 tickLower, int24 tickUpper, uint256 liquidity, uint128 amount0Max, uint128 amount1Max, address owner, bytes hookData',
+);
+const settlePairParamTypes = parseAbiParameters('address currency0, address currency1');
+const sweepParamTypes = parseAbiParameters('address currency, address to');
 
 const positionManager: Address = '0x0000000000000000000000000000000000000900';
 const hooks: Address = '0x0000000000000000000000000000000000002044';
@@ -94,5 +111,97 @@ describe('v4 mint transaction', () => {
     // constructors throw a bare tiny-invariant Error for this, not a UniswapSdkError —
     // this asserts the wrapper still normalizes it rather than leaking the raw invariant.
     expectSdkError({ ...baseParams, tickLower: -61 });
+  });
+});
+
+describe('v4 mint calldata review', () => {
+  const expected = {
+    currency0: token.address as Address, currency1: other.address as Address,
+    fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient,
+  };
+
+  it('round-trips a plain mint back to its own parameters', () => {
+    const material = buildV4MintPositionTransaction(baseParams);
+    const decoded = reviewV4MintPositionCalldata(material.data, expected);
+    expect(decoded.poolKey.currency0.toLowerCase()).toBe(token.address.toLowerCase());
+    expect(decoded.poolKey.currency1.toLowerCase()).toBe(other.address.toLowerCase());
+    expect(decoded.poolKey.fee).toBe(pool.fee);
+    expect(decoded.poolKey.tickSpacing).toBe(pool.tickSpacing);
+    expect(decoded.tickLower).toBe(baseParams.tickLower);
+    expect(decoded.tickUpper).toBe(baseParams.tickUpper);
+    expect(decoded.liquidity).toBe(baseParams.liquidity);
+    expect(decoded.owner.toLowerCase()).toBe(recipient.toLowerCase());
+    expect(decoded.hookData).toBe('0x');
+    expect(decoded.deadline).toBe(baseParams.deadlineSeconds);
+  });
+
+  it('round-trips a createPool mint through its multicall wrapper', () => {
+    const material = buildV4MintPositionTransaction({ ...baseParams, createPool: true });
+    const decoded = reviewV4MintPositionCalldata(material.data, { ...expected, sqrtPriceX96: pool.sqrtPriceX96 });
+    expect(decoded.tickLower).toBe(baseParams.tickLower);
+    expect(decoded.owner.toLowerCase()).toBe(recipient.toLowerCase());
+    expect(decoded.deadline).toBe(baseParams.deadlineSeconds);
+    expect(decoded.createdAtSqrtPriceX96).toBe(pool.sqrtPriceX96);
+  });
+
+  it('rejects a createPool mint with no expected starting price, or the wrong one', () => {
+    const material = buildV4MintPositionTransaction({ ...baseParams, createPool: true });
+    expect(() => reviewV4MintPositionCalldata(material.data, expected)).toThrow(/no expected starting price/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, sqrtPriceX96: pool.sqrtPriceX96 + 1n }))
+      .toThrow(/different starting price/);
+  });
+
+  it('round-trips a native-currency0 mint (MINT_POSITION, SETTLE_PAIR, SWEEP)', () => {
+    const nativePool: V4PoolState = { ...pool, currency0: Ether.onChain(1), hooks: zeroAddress };
+    const material = buildV4MintPositionTransaction({ ...baseParams, pool: nativePool });
+    const decoded = reviewV4MintPositionCalldata(material.data, { ...expected, currency0: zeroAddress, hooks: zeroAddress });
+    expect(decoded.owner.toLowerCase()).toBe(recipient.toLowerCase());
+  });
+
+  it('rejects a mint that targets a different token pair, pool configuration, or recipient', () => {
+    const material = buildV4MintPositionTransaction(baseParams);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, currency1: recipient })).toThrow(/different pool/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, hooks: recipient })).toThrow(/different pool/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, fee: 500 })).toThrow(/different pool/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, recipient: token.address as Address })).toThrow(/different recipient/);
+  });
+
+  it('rejects a createPool mint whose initialization targets a different pool than the mint', () => {
+    const mintParams = encodeAbiParameters(mintPositionParamTypes, [
+      { currency0: token.address as Address, currency1: other.address as Address, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks },
+      baseParams.tickLower, baseParams.tickUpper, baseParams.liquidity, (1n << 128n) - 1n, (1n << 128n) - 1n, recipient, '0x',
+    ]);
+    const settleParams = encodeAbiParameters(settlePairParamTypes, [token.address as Address, other.address as Address]);
+    const mint = encodeRawActions([{ id: 2, params: mintParams }, { id: 13, params: settleParams }], baseParams.deadlineSeconds);
+    const wrongInitialization = encodeFunctionData({
+      abi: v4PositionManagerAbi, functionName: 'initializePool',
+      // Same pair, but a different tickSpacing than the mint's poolKey — a different pool.
+      args: [{ currency0: token.address as Address, currency1: other.address as Address, fee: pool.fee, tickSpacing: pool.tickSpacing + 60, hooks }, pool.sqrtPriceX96],
+    });
+    const multicall = encodeFunctionData({ abi: v4PositionManagerAbi, functionName: 'multicall', args: [[wrongInitialization, mint]] });
+    expect(() => reviewV4MintPositionCalldata(multicall, expected)).toThrow(/different pool than the position mint/);
+  });
+
+  it('rejects a SWEEP that refunds to an address other than PositionManager\'s MSG_SENDER sentinel', () => {
+    const nativePoolKey = { currency0: zeroAddress, currency1: other.address as Address, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks: zeroAddress };
+    const mintParams = encodeAbiParameters(mintPositionParamTypes, [
+      nativePoolKey, baseParams.tickLower, baseParams.tickUpper, baseParams.liquidity, (1n << 128n) - 1n, (1n << 128n) - 1n, recipient, '0x',
+    ]);
+    const settleParams = encodeAbiParameters(settlePairParamTypes, [zeroAddress, other.address as Address]);
+    // A real SWEEP always pays PositionManager's own MSG_SENDER sentinel (…0001); this one
+    // redirects the native-currency refund to an arbitrary address instead.
+    const sweepParams = encodeAbiParameters(sweepParamTypes, [zeroAddress, recipient]);
+    const forged = encodeRawActions(
+      [{ id: 2, params: mintParams }, { id: 13, params: settleParams }, { id: 20, params: sweepParams }],
+      baseParams.deadlineSeconds,
+    );
+    expect(() => reviewV4MintPositionCalldata(forged, { ...expected, currency0: zeroAddress, hooks: zeroAddress }))
+      .toThrow(/unexpected recipient/);
+  });
+
+  it('rejects calldata that is not one of its own mint builds', () => {
+    expect(() => reviewV4MintPositionCalldata('0x12345678', expected)).toThrow();
+    // A real ERC20 `approve` selector — 4 bytes, no position-manager function matches it.
+    expect(() => reviewV4MintPositionCalldata('0x095ea7b3', expected)).toThrow();
   });
 });
