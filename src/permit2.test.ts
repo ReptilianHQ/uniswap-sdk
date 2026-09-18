@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Address } from 'viem';
+import { AllowanceTransfer } from '@uniswap/permit2-sdk';
+import { hashTypedData, zeroAddress, type Address } from 'viem';
 import { buildV4MintPermitBatchTypedData } from './permit2.js';
 import { isUniswapSdkError } from './errors.js';
 
@@ -7,6 +8,8 @@ const spender: Address = '0x0000000000000000000000000000000000000900';
 const tokenA: Address = '0x0000000000000000000000000000000000000010';
 const tokenB: Address = '0x0000000000000000000000000000000000000020';
 const permit2Address: Address = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+// zkSync's Permit2 deployment, per @uniswap/permit2-sdk's own permit2Address(chainId).
+const zkSyncPermit2Address: Address = '0x0000000000225e31D15943971F47aD3022F714Fa';
 
 const baseInput = {
   chainId: 1,
@@ -54,16 +57,62 @@ describe('v4 mint Permit2 typed data', () => {
     expect(typedData.domain.verifyingContract.toLowerCase()).toBe(override.toLowerCase());
   });
 
-  it('rejects an empty details array, an invalid chainId, and an invalid address as UniswapSdkError', () => {
+  it('resolves the chain-specific Permit2 deployment instead of always using the mainnet address', () => {
+    // zkSync (324) is deployed at a different address; a chain-unaware default would emit
+    // the mainnet address here, producing a signature Permit2 never sees on that chain.
+    const typedData = buildV4MintPermitBatchTypedData({ ...baseInput, chainId: 324 });
+    expect(typedData.domain.verifyingContract).toBe(zkSyncPermit2Address);
+    expect(buildV4MintPermitBatchTypedData({ ...baseInput, chainId: 1 }).domain.verifyingContract).toBe(permit2Address);
+  });
+
+  it('matches the official Permit2 SDK\'s own EIP-712 digest exactly', () => {
+    const typedData = buildV4MintPermitBatchTypedData(baseInput);
+    const viemHash = hashTypedData({
+      domain: typedData.domain,
+      types: typedData.types,
+      primaryType: 'PermitBatch',
+      message: typedData.message,
+    });
+    const officialHash = AllowanceTransfer.hash(
+      {
+        details: baseInput.details.map(d => ({ token: d.token, amount: d.amount.toString(), expiration: d.expiration.toString(), nonce: d.nonce.toString() })),
+        spender: baseInput.spender,
+        sigDeadline: baseInput.sigDeadline.toString(),
+      },
+      permit2Address,
+      baseInput.chainId,
+    );
+    expect(viemHash.toLowerCase()).toBe(officialHash.toLowerCase());
+  });
+
+  it('rejects an empty details array, an invalid chainId, an invalid address, or a zero address as UniswapSdkError', () => {
     for (const bad of [
       { details: [] },
       { chainId: 0 },
       { chainId: -1 },
       { spender: 'not-an-address' as Address },
+      { spender: zeroAddress },
+      { permit2Address: zeroAddress },
     ]) {
       try {
         buildV4MintPermitBatchTypedData({ ...baseInput, ...bad });
-        expect.unreachable('expected buildV4MintPermitBatchTypedData to reject this input');
+        expect.unreachable(`expected buildV4MintPermitBatchTypedData to reject ${JSON.stringify(bad)}`);
+      } catch (error) {
+        expect(isUniswapSdkError(error)).toBe(true);
+      }
+    }
+  });
+
+  it('rejects negative amounts, expirations, nonces, and signature deadlines', () => {
+    for (const bad of [
+      { sigDeadline: -1n },
+      { details: [{ ...baseInput.details[0]!, amount: -1n }] },
+      { details: [{ ...baseInput.details[0]!, expiration: -1n }] },
+      { details: [{ ...baseInput.details[0]!, nonce: -1n }] },
+    ]) {
+      try {
+        buildV4MintPermitBatchTypedData({ ...baseInput, ...bad });
+        expect.unreachable(`expected buildV4MintPermitBatchTypedData to reject ${JSON.stringify(bad)}`);
       } catch (error) {
         expect(isUniswapSdkError(error)).toBe(true);
       }
@@ -72,7 +121,8 @@ describe('v4 mint Permit2 typed data', () => {
 
   it('normalizes an official-SDK invariant failure (nonce out of range) into a UniswapSdkError', () => {
     // Permit2's own AllowanceTransfer.getPermitData enforces MaxOrderedNonce; this wrapper's
-    // own pre-validation doesn't duplicate that range check, so this reaches the official SDK.
+    // own pre-validation doesn't duplicate that upper-bound range check, so this reaches the
+    // official SDK.
     try {
       buildV4MintPermitBatchTypedData({
         ...baseInput,
@@ -82,5 +132,13 @@ describe('v4 mint Permit2 typed data', () => {
     } catch (error) {
       expect(isUniswapSdkError(error)).toBe(true);
     }
+  });
+
+  it('does not mutate the shared types object across calls', () => {
+    const first = buildV4MintPermitBatchTypedData(baseInput);
+    // @ts-expect-error -- deliberately mutating a supposedly-independent copy
+    first.types.PermitBatch.push({ name: 'forged', type: 'address' });
+    const second = buildV4MintPermitBatchTypedData(baseInput);
+    expect(second.types.PermitBatch).toHaveLength(3);
   });
 });
