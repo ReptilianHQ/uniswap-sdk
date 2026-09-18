@@ -4,6 +4,7 @@ import { Percent, Pool, Position, V4PositionManager } from './official-sdk.cjs';
 import { checkedAddress } from './pool.js';
 import { invalid, UniswapSdkError } from './errors.js';
 import { v4PositionManagerAbi } from './abis.js';
+import { unmodelledV4HookPermissions, type V4HookPermissions } from './hooks.js';
 
 export type V4TransactionMaterial = { to: Address; data: Hex; value: bigint };
 
@@ -36,6 +37,13 @@ export type V4MintPositionParams = {
   createPool?: boolean;
   /** A Permit2 batch approval signed by the caller's own wallet; see `buildV4MintPermitBatchTypedData`. */
   batchPermit?: V4BatchPermit;
+  /**
+   * Permission flags the caller has reviewed for `pool.hooks` (see `decodeV4HookPermissions`).
+   * Required whenever `pool.hooks` is not the zero address: a hook implementing a callback the
+   * caller has not modelled can move price, take a cut, or otherwise change what this mint
+   * actually does, so minting into one is refused rather than assumed benign.
+   */
+  modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
 };
 
 function slippagePercent(bps: number): Percent {
@@ -65,9 +73,13 @@ export type V4BatchPermit = {
  * Pass `batchPermit` (built via `buildV4MintPermitBatchTypedData` and signed by the caller's own
  * wallet) to fold a Permit2 approval into this same transaction instead of requiring a prior,
  * separate ERC20 `approve`. Without it, callers must already hold a plain ERC20 approval or the
- * built transaction will revert on-chain. Hook-permission gating (refusing a pool whose hook
- * implements more than the caller has modelled) is the caller's responsibility either way; this
- * function only encodes what it is given.
+ * built transaction will revert on-chain.
+ *
+ * If `pool.hooks` is not the zero address, `modelledHookPermissions` is required and this
+ * function refuses to mint if the hook implements any permission flag outside it (see
+ * `decodeV4HookPermissions`/`unmodelledV4HookPermissions`) — a hook can move price, take a cut,
+ * or otherwise change what this mint actually does, so an unreviewed one is refused rather than
+ * assumed benign.
  */
 export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4TransactionMaterial {
   if (input.liquidity <= 0n) invalid('Mint liquidity must be positive');
@@ -78,6 +90,15 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
   const positionManager = checkedAddress(input.positionManager);
   const recipient = checkedAddress(input.recipient);
   const slippageTolerance = slippagePercent(input.slippageToleranceBps);
+  const hooks = checkedAddress(input.pool.hooks);
+
+  if (!same(hooks, zeroAddress)) {
+    if (!input.modelledHookPermissions) {
+      invalid('pool.hooks is set but no modelledHookPermissions were supplied to verify it');
+    }
+    const unmodelled = unmodelledV4HookPermissions(hooks, input.modelledHookPermissions);
+    if (unmodelled.length) invalid(`Pool hook implements unmodelled permissions: ${unmodelled.join(', ')}`);
+  }
 
   if (input.batchPermit) {
     if (!same(input.batchPermit.permitBatch.spender, positionManager)) {
@@ -104,7 +125,7 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
       input.pool.currency1,
       input.pool.fee,
       input.pool.tickSpacing,
-      checkedAddress(input.pool.hooks),
+      hooks,
       input.pool.sqrtPriceX96.toString(),
       input.pool.liquidity.toString(),
       input.pool.tickCurrent,
@@ -230,6 +251,13 @@ export type V4ExpectedMint = V4PoolKeyMaterial & {
    * does include a permit, rather than trusting whatever it authorizes.
    */
   batchPermit?: { owner: Address; spender: Address; sigDeadline: bigint; details: readonly V4BatchPermitDetail[] };
+  /**
+   * Required if `hooks` is not the zero address; the permission flags the caller has reviewed
+   * for it. Minting into a hook that implements any other permission flag is refused — the
+   * same gate `buildV4MintPositionTransaction` applies when building this calldata in the
+   * first place, re-checked here independently of what the builder was told.
+   */
+  modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
 };
 
 /**
@@ -323,6 +351,14 @@ export function reviewV4MintPositionCalldata(data: Hex, expected: V4ExpectedMint
 
     if (!samePoolKey(poolKey, expected)) mismatch('Mint calldata targets a different pool than expected');
     if (!same(owner, expected.recipient)) mismatch('Mint calldata sends the position NFT to a different recipient');
+
+    if (!same(poolKey.hooks, zeroAddress)) {
+      if (!expected.modelledHookPermissions) {
+        mismatch('Mint calldata targets a pool with a hook but no modelled permissions were supplied to verify it');
+      }
+      const unmodelled = unmodelledV4HookPermissions(poolKey.hooks, expected.modelledHookPermissions);
+      if (unmodelled.length) mismatch(`Mint calldata's pool hook implements unmodelled permissions: ${unmodelled.join(', ')}`);
+    }
 
     if (initialization) {
       if (expected.sqrtPriceX96 === undefined) {
