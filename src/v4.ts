@@ -8,6 +8,6 @@ export { decodeV4PoolInitialization } from './events.js';
 export { decodeV4HookPermissions, unmodelledV4HookPermissions } from './hooks.js';
 export type { V4HookPermissions } from './hooks.js';
 export { buildV4MintPositionTransaction, reviewV4MintPositionCalldata } from './v4-transactions.js';
-export type { V4ExpectedMint, V4MintActionParams, V4MintPositionParams, V4PoolKeyMaterial, V4PoolState, V4TransactionMaterial } from './v4-transactions.js';
+export type { V4BatchPermit, V4BatchPermitDetail, V4ExpectedMint, V4MintActionParams, V4MintPositionParams, V4PoolKeyMaterial, V4PoolState, V4TransactionMaterial } from './v4-transactions.js';
 export { buildV4MintPermitBatchTypedData } from './permit2.js';
 export type { V4PermitBatchDetailInput, V4PermitBatchTypedData } from './permit2.js';

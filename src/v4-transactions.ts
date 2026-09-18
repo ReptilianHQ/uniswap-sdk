@@ -34,6 +34,8 @@ export type V4MintPositionParams = {
   hookData?: Hex;
   /** Atomically initializes the pool before minting. Requires `pool.sqrtPriceX96` to be the intended starting price. */
   createPool?: boolean;
+  /** A Permit2 batch approval signed by the caller's own wallet; see `buildV4MintPermitBatchTypedData`. */
+  batchPermit?: V4BatchPermit;
 };
 
 function slippagePercent(bps: number): Percent {
@@ -43,16 +45,29 @@ function slippagePercent(bps: number): Percent {
   return new Percent(bps, 10_000);
 }
 
+function same(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+export type V4BatchPermitDetail = { token: Address; amount: bigint; expiration: bigint; nonce: bigint };
+export type V4BatchPermit = {
+  owner: Address;
+  permitBatch: { details: readonly V4BatchPermitDetail[]; spender: Address; sigDeadline: bigint };
+  signature: Hex;
+};
+
 /**
  * Builds unsigned calldata for `PositionManager.modifyLiquidities` minting a new v4 position.
  * Delegates encoding to `@uniswap/v4-sdk`'s `V4PositionManager`/`V4PositionPlanner` (the same
  * Actions/multicall encoding Uniswap's own SDK uses) rather than hand-rolling it, since v4's
  * calldata is a sequence of packed actions, not a single ABI-encoded function call like v3's.
  *
- * No Permit2 support yet — callers must have already approved the position manager via a plain
- * ERC20 approval, or the built transaction will revert on-chain. Hook-permission gating (refusing
- * a pool whose hook implements more than the caller has modelled) is also the caller's
- * responsibility; this function only encodes what it is given.
+ * Pass `batchPermit` (built via `buildV4MintPermitBatchTypedData` and signed by the caller's own
+ * wallet) to fold a Permit2 approval into this same transaction instead of requiring a prior,
+ * separate ERC20 `approve`. Without it, callers must already hold a plain ERC20 approval or the
+ * built transaction will revert on-chain. Hook-permission gating (refusing a pool whose hook
+ * implements more than the caller has modelled) is the caller's responsibility either way; this
+ * function only encodes what it is given.
  */
 export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4TransactionMaterial {
   if (input.liquidity <= 0n) invalid('Mint liquidity must be positive');
@@ -63,6 +78,25 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
   const positionManager = checkedAddress(input.positionManager);
   const recipient = checkedAddress(input.recipient);
   const slippageTolerance = slippagePercent(input.slippageToleranceBps);
+
+  if (input.batchPermit) {
+    if (!same(input.batchPermit.permitBatch.spender, positionManager)) {
+      invalid('batchPermit.permitBatch.spender must be the position manager this transaction submits to');
+    }
+    if (!input.batchPermit.permitBatch.details.length) invalid('batchPermit.permitBatch.details must include at least one token');
+    const poolTokens = [input.pool.currency0, input.pool.currency1]
+      .filter(currency => !currency.isNative)
+      .map(currency => checkedAddress(currency.wrapped.address as Address));
+    const seen = new Set<string>();
+    for (const detail of input.batchPermit.permitBatch.details) {
+      const token = checkedAddress(detail.token);
+      if (!poolTokens.some(poolToken => same(poolToken, token))) {
+        invalid('batchPermit.permitBatch.details references a token that is not part of this mint\'s pool');
+      }
+      if (seen.has(token.toLowerCase())) invalid('batchPermit.permitBatch.details lists the same token more than once');
+      seen.add(token.toLowerCase());
+    }
+  }
 
   try {
     const pool = new Pool(
@@ -89,6 +123,22 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
       slippageTolerance,
       hookData: input.hookData,
       deadline: input.deadlineSeconds.toString(),
+      ...(input.batchPermit ? {
+        batchPermit: {
+          owner: checkedAddress(input.batchPermit.owner),
+          permitBatch: {
+            details: input.batchPermit.permitBatch.details.map(detail => ({
+              token: checkedAddress(detail.token),
+              amount: detail.amount.toString(),
+              expiration: detail.expiration.toString(),
+              nonce: detail.nonce.toString(),
+            })),
+            spender: checkedAddress(input.batchPermit.permitBatch.spender),
+            sigDeadline: input.batchPermit.permitBatch.sigDeadline.toString(),
+          },
+          signature: input.batchPermit.signature,
+        },
+      } : {}),
     });
     return { to: positionManager, data: params.calldata as Hex, value: BigInt(params.value) };
   } catch (cause) {
@@ -124,11 +174,9 @@ export type V4MintActionParams = {
   deadline: bigint;
   /** Present only if this mint atomically initializes the pool; the price it initializes at. */
   createdAtSqrtPriceX96?: bigint;
+  /** Present only if this mint folds in a Permit2 batch approval; the address that signed it. */
+  batchPermitOwner?: Address;
 };
-
-function same(a: string, b: string): boolean {
-  return a.toLowerCase() === b.toLowerCase();
-}
 
 function mismatch(message: string): never {
   throw new UniswapSdkError('CALLDATA_MISMATCH', message);
@@ -148,6 +196,23 @@ function samePoolKey(a: V4PoolKeyMaterial, b: V4PoolKeyMaterial): boolean {
     && a.fee === b.fee && a.tickSpacing === b.tickSpacing && same(a.hooks, b.hooks);
 }
 
+/**
+ * A 1:1 pairing, not "every actual detail matches some expected detail" — that weaker check
+ * would let `[A, A]` pass against `expected = [A, B]` (both actual entries match A; lengths
+ * happen to agree), silently ignoring that B was never actually authorized and A appears twice.
+ */
+function sameBatchPermitDetails(actual: readonly V4BatchPermitDetail[], expected: readonly V4BatchPermitDetail[]): boolean {
+  if (actual.length !== expected.length) return false;
+  const remaining = expected.slice();
+  for (const detail of actual) {
+    const index = remaining.findIndex(candidate => same(candidate.token, detail.token)
+      && candidate.amount === detail.amount && candidate.expiration === detail.expiration && candidate.nonce === detail.nonce);
+    if (index === -1) return false;
+    remaining.splice(index, 1);
+  }
+  return true;
+}
+
 export type V4ExpectedMint = V4PoolKeyMaterial & {
   recipient: Address;
   /**
@@ -158,15 +223,23 @@ export type V4ExpectedMint = V4PoolKeyMaterial & {
    * pool-creating mint by `createdAtSqrtPriceX96` being absent from the result.
    */
   sqrtPriceX96?: bigint;
+  /**
+   * Required if this mint folds in a Permit2 batch approval; the only owner/spender/
+   * sigDeadline/token-detail set that approval may authorize. Checked only in that
+   * direction, the same as `sqrtPriceX96` — omitting it fails closed if the calldata
+   * does include a permit, rather than trusting whatever it authorizes.
+   */
+  batchPermit?: { owner: Address; spender: Address; sigDeadline: bigint; details: readonly V4BatchPermitDetail[] };
 };
 
 /**
  * Decodes and verifies calldata built by `buildV4MintPositionTransaction`: a
  * `modifyLiquidities` call — optionally wrapped in a `multicall` alongside pool
- * initialization — encoding exactly a MINT_POSITION action, a SETTLE_PAIR, and,
- * for a native-currency0 mint, a trailing SWEEP. This is the only action shape
- * that function produces; any other sequence is calldata this decoder does not
- * recognise as its own and refuses, rather than guessing at its meaning.
+ * initialization and/or a Permit2 batch approval — encoding exactly a MINT_POSITION
+ * action, a SETTLE_PAIR, and, for a native-currency0 mint, a trailing SWEEP. This is
+ * the only action shape that function produces; any other sequence is calldata this
+ * decoder does not recognise as its own and refuses, rather than guessing at its
+ * meaning.
  *
  * `expected` must name the full pool (including `hooks`), not just the token
  * pair — a mint into the same pair through a different, unreviewed hook is a
@@ -176,7 +249,10 @@ export type V4ExpectedMint = V4PoolKeyMaterial & {
  * `V4PoolKey`/`Pool` represent it elsewhere in this SDK — this function does
  * not reorder or reinterpret them. Pass `sqrtPriceX96` when the mint might
  * atomically create the pool; omitting it fails closed rather than silently
- * accepting whatever starting price the calldata sets.
+ * accepting whatever starting price the calldata sets. Pass `batchPermit` when
+ * the mint might fold in a Permit2 approval, for the same reason — a decoded
+ * permit's token/owner/spender are also self-checked against the pool regardless
+ * of what `expected` claims.
  */
 export function reviewV4MintPositionCalldata(data: Hex, expected: V4ExpectedMint): V4MintActionParams {
   try {
@@ -184,13 +260,30 @@ export function reviewV4MintPositionCalldata(data: Hex, expected: V4ExpectedMint
     let unlockData: Hex;
     let deadline: bigint;
     let initialization: { key: V4PoolKeyMaterial; sqrtPriceX96: bigint } | undefined;
+    let batchPermit: { owner: Address; spender: Address; sigDeadline: bigint; details: readonly V4BatchPermitDetail[] } | undefined;
     if (decoded.functionName === 'multicall') {
       const calls = decoded.args[0].map(call => decodeFunctionData({ abi: v4PositionManagerAbi, data: call }));
-      if (calls.length !== 2 || calls[0]!.functionName !== 'initializePool' || calls[1]!.functionName !== 'modifyLiquidities') {
-        mismatch('Mint calldata multicall must contain only pool initialization followed by one mint');
+      if (calls.length < 2 || calls.length > 3) mismatch('Mint calldata multicall does not have the call count a plain mint produces');
+      const mintCall = calls.at(-1)!;
+      if (mintCall.functionName !== 'modifyLiquidities') mismatch('Mint calldata multicall must end with the position mint');
+      for (const call of calls.slice(0, -1)) {
+        if (call.functionName === 'initializePool') {
+          if (initialization) mismatch('Mint calldata multicall contains more than one pool initialization');
+          initialization = { key: call.args[0] as V4PoolKeyMaterial, sqrtPriceX96: call.args[1] as bigint };
+        } else if (call.functionName === 'permitBatch') {
+          if (batchPermit) mismatch('Mint calldata multicall contains more than one permit batch');
+          const [owner, permitBatch] = call.args as readonly [Address, { details: readonly { token: Address; amount: bigint; expiration: number; nonce: number }[]; spender: Address; sigDeadline: bigint }, Hex];
+          batchPermit = {
+            owner,
+            spender: permitBatch.spender,
+            sigDeadline: permitBatch.sigDeadline,
+            details: permitBatch.details.map(detail => ({ token: detail.token, amount: detail.amount, expiration: BigInt(detail.expiration), nonce: BigInt(detail.nonce) })),
+          };
+        } else {
+          mismatch('Mint calldata multicall contains an unreviewed call before the position mint');
+        }
       }
-      initialization = { key: calls[0]!.args[0] as V4PoolKeyMaterial, sqrtPriceX96: calls[0]!.args[1] as bigint };
-      [unlockData, deadline] = calls[1]!.args as [Hex, bigint];
+      [unlockData, deadline] = mintCall.args as [Hex, bigint];
     } else if (decoded.functionName === 'modifyLiquidities') {
       [unlockData, deadline] = decoded.args;
     } else {
@@ -240,9 +333,37 @@ export function reviewV4MintPositionCalldata(data: Hex, expected: V4ExpectedMint
       }
     }
 
+    if (batchPermit) {
+      // Self-checked against the decoded poolKey regardless of what `expected` claims, so a
+      // caller who fails to scrutinize `expected` still can't be tricked into treating a permit
+      // for an unrelated or duplicated token as reviewed.
+      const poolTokens = [poolKey.currency0, poolKey.currency1];
+      const seenTokens = new Set<string>();
+      for (const detail of batchPermit.details) {
+        if (same(detail.token, zeroAddress)) mismatch('Permit2 batch approval cannot cover the native currency');
+        if (!poolTokens.some(poolToken => same(poolToken, detail.token))) {
+          mismatch('Permit2 batch approval references a token that is not part of the minted pool');
+        }
+        const key = detail.token.toLowerCase();
+        if (seenTokens.has(key)) mismatch('Permit2 batch approval lists the same token more than once');
+        seenTokens.add(key);
+      }
+
+      if (!expected.batchPermit) {
+        mismatch('Mint calldata includes a Permit2 batch approval but no expected approval was supplied to verify it');
+      }
+      if (!same(batchPermit.owner, expected.batchPermit.owner)
+        || !same(batchPermit.spender, expected.batchPermit.spender)
+        || batchPermit.sigDeadline !== expected.batchPermit.sigDeadline
+        || !sameBatchPermitDetails(batchPermit.details, expected.batchPermit.details)) {
+        mismatch('Mint calldata\'s Permit2 batch approval does not match what was expected');
+      }
+    }
+
     return {
       poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, owner, hookData, deadline,
       ...(initialization ? { createdAtSqrtPriceX96: initialization.sqrtPriceX96 } : {}),
+      ...(batchPermit ? { batchPermitOwner: batchPermit.owner } : {}),
     };
   } catch (error) {
     if (error instanceof UniswapSdkError) throw error;
