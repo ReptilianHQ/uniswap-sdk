@@ -18,5 +18,11 @@ export const v4QuoterAbi = parseAbi([
 export const v4PoolManagerAbi = parseAbi([
   'event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)',
 ]);
+export const v4PositionManagerAbi = parseAbi([
+  'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
+  'function initializePool(PoolKey key, uint160 sqrtPriceX96) payable returns (int24)',
+  'function modifyLiquidities(bytes unlockData, uint256 deadline) payable',
+  'function multicall(bytes[] data) payable returns (bytes[] results)',
+]);
 
 export * from './v3-abis.js';
