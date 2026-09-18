@@ -266,10 +266,18 @@ describe('v4 mint with a Permit2 batch approval', () => {
     })).toThrow(/does not match what was expected/);
   });
 
-  it('rejects a calldata permit whose details are a duplicated entry matched against two distinct expected details', () => {
-    // A weaker "every actual detail matches some expected detail" check would wrongly pass
-    // here: both (identical) actual entries match expectedA, so the length (2 vs 2) and
-    // per-entry containment both look satisfied even though expectedB was never authorized.
+  it('rejects a calldata permit with a repeated token, caught by the pool-membership self-check', () => {
+    // This exercises the self-check (`lists the same token more than once`), not
+    // sameBatchPermitDetails's pairing directly: given that self-check, a decoded
+    // detail list is always duplicate-free by token, which makes a duplicate-free
+    // actual of length N contained in an expected of length N force expected to be
+    // a permutation of actual — so this input can no longer distinguish 1:1 pairing
+    // from set containment. The pairing algorithm's correctness for the general
+    // case (verified separately, since it has no public entry point once the
+    // self-check applies) is: a duplicate-free `actual` vs an `expected` that
+    // itself contains a duplicate (e.g. [A, A] fed in by a careless caller) still
+    // correctly rejects, since one of the two identical expected slots always goes
+    // unmatched — reviewed by inspection and manual probing, not a committed test.
     const detailA = { token: token.address as Address, amount: 1_000_000n, expiration: 9_999_999_999n, nonce: 0n };
     const detailB = { token: other.address as Address, amount: 2_000_000n, expiration: 9_999_999_999n, nonce: 1n };
     const forgedPermitCall = encodeFunctionData({
@@ -296,6 +304,6 @@ describe('v4 mint with a Permit2 batch approval', () => {
       fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient,
       batchPermit: { owner: recipient, spender: positionManager, sigDeadline: baseParams.deadlineSeconds, details: [detailA, detailB] },
     };
-    expect(() => reviewV4MintPositionCalldata(forged, expected)).toThrow();
+    expect(() => reviewV4MintPositionCalldata(forged, expected)).toThrow(/lists the same token more than once/);
   });
 });
