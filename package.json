@@ -1,6 +1,6 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
   "license": "MIT",
   "type": "module",
