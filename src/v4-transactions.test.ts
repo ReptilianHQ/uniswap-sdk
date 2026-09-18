@@ -13,6 +13,9 @@ function encodeRawActions(actions: readonly { id: number; params: Hex }[], deadl
   const unlockData = encodeAbiParameters(parseAbiParameters('bytes actions, bytes[] params'), [actionsBytes, actions.map(a => a.params)]);
   return encodeFunctionData({ abi: v4PositionManagerAbi, functionName: 'modifyLiquidities', args: [unlockData, deadline] });
 }
+// Deliberately re-typed rather than imported from src/v4-transactions.ts: this independently
+// pins the wire format reviewV4MintPositionCalldata must decode, so a source-side typo in the
+// ABI parameter string can't drift silently in lockstep on both sides of the same test.
 const mintPositionParamTypes = parseAbiParameters(
   '(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, int24 tickLower, int24 tickUpper, uint256 liquidity, uint128 amount0Max, uint128 amount1Max, address owner, bytes hookData',
 );
@@ -134,10 +137,18 @@ describe('v4 mint calldata review', () => {
 
   it('round-trips a createPool mint through its multicall wrapper', () => {
     const material = buildV4MintPositionTransaction({ ...baseParams, createPool: true });
-    const decoded = reviewV4MintPositionCalldata(material.data, expected);
+    const decoded = reviewV4MintPositionCalldata(material.data, { ...expected, sqrtPriceX96: pool.sqrtPriceX96 });
     expect(decoded.tickLower).toBe(baseParams.tickLower);
     expect(decoded.owner.toLowerCase()).toBe(recipient.toLowerCase());
     expect(decoded.deadline).toBe(baseParams.deadlineSeconds);
+    expect(decoded.createdAtSqrtPriceX96).toBe(pool.sqrtPriceX96);
+  });
+
+  it('rejects a createPool mint with no expected starting price, or the wrong one', () => {
+    const material = buildV4MintPositionTransaction({ ...baseParams, createPool: true });
+    expect(() => reviewV4MintPositionCalldata(material.data, expected)).toThrow(/no expected starting price/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, sqrtPriceX96: pool.sqrtPriceX96 + 1n }))
+      .toThrow(/different starting price/);
   });
 
   it('round-trips a native-currency0 mint (MINT_POSITION, SETTLE_PAIR, SWEEP)', () => {

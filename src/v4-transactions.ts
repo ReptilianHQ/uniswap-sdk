@@ -122,6 +122,8 @@ export type V4MintActionParams = {
   owner: Address;
   hookData: Hex;
   deadline: bigint;
+  /** Present only if this mint atomically initializes the pool; the price it initializes at. */
+  createdAtSqrtPriceX96?: bigint;
 };
 
 function same(a: string, b: string): boolean {
@@ -157,8 +159,18 @@ function samePoolKey(a: V4PoolKeyMaterial, b: V4PoolKeyMaterial): boolean {
  * `expected` must name the full pool (including `hooks`), not just the token
  * pair — a mint into the same pair through a different, unreviewed hook is a
  * different pool with different economics, not a cosmetic difference.
+ * `currency0`/`currency1` must already be in canonical (sorted) order, and a
+ * native-currency pool's `currency0` must be the zero address, matching how
+ * `V4PoolKey`/`Pool` represent it elsewhere in this SDK — this function does
+ * not reorder or reinterpret them. Pass `sqrtPriceX96` when the mint might
+ * atomically create the pool; omitting it fails closed rather than silently
+ * accepting whatever starting price the calldata sets.
  */
-export function reviewV4MintPositionCalldata(data: Hex, expected: V4PoolKeyMaterial & { recipient: Address }): V4MintActionParams {
+export function reviewV4MintPositionCalldata(data: Hex, expected: V4PoolKeyMaterial & {
+  recipient: Address;
+  /** Required if this mint might atomically create the pool; the only price that mint may set. */
+  sqrtPriceX96?: bigint;
+}): V4MintActionParams {
   try {
     const decoded = decodeFunctionData({ abi: v4PositionManagerAbi, data });
     let unlockData: Hex;
@@ -211,7 +223,19 @@ export function reviewV4MintPositionCalldata(data: Hex, expected: V4PoolKeyMater
     if (!samePoolKey(poolKey, expected)) mismatch('Mint calldata targets a different pool than expected');
     if (!same(owner, expected.recipient)) mismatch('Mint calldata sends the position NFT to a different recipient');
 
-    return { poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, owner, hookData, deadline };
+    if (initialization) {
+      if (expected.sqrtPriceX96 === undefined) {
+        mismatch('Mint calldata initializes the pool but no expected starting price was supplied to verify it');
+      }
+      if (initialization.sqrtPriceX96 !== expected.sqrtPriceX96) {
+        mismatch('Mint calldata initializes the pool at a different starting price than expected');
+      }
+    }
+
+    return {
+      poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, owner, hookData, deadline,
+      ...(initialization ? { createdAtSqrtPriceX96: initialization.sqrtPriceX96 } : {}),
+    };
   } catch (error) {
     if (error instanceof UniswapSdkError) throw error;
     throw new UniswapSdkError('CALLDATA_MISMATCH', 'Mint calldata contains undecodable position-manager calls', { cause: error });
