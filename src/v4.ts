@@ -7,5 +7,5 @@ export type { V4Tick, V4TickWindow } from './depth.js';
 export { decodeV4PoolInitialization } from './events.js';
 export { decodeV4HookPermissions, unmodelledV4HookPermissions } from './hooks.js';
 export type { V4HookPermissions } from './hooks.js';
-export { buildV4MintPositionTransaction } from './v4-transactions.js';
-export type { V4MintPositionParams, V4PoolState, V4TransactionMaterial } from './v4-transactions.js';
+export { buildV4MintPositionTransaction, reviewV4MintPositionCalldata } from './v4-transactions.js';
+export type { V4MintActionParams, V4MintPositionParams, V4PoolState, V4TransactionMaterial } from './v4-transactions.js';

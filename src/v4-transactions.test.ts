@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Ether, Token } from '@uniswap/sdk-core';
 import { decodeFunctionData, zeroAddress, type Address } from 'viem';
 import { v4PositionManagerAbi } from './abis.js';
-import { buildV4MintPositionTransaction, type V4PoolState } from './v4-transactions.js';
+import { buildV4MintPositionTransaction, reviewV4MintPositionCalldata, type V4PoolState } from './v4-transactions.js';
 import { isUniswapSdkError } from './errors.js';
 
 const positionManager: Address = '0x0000000000000000000000000000000000000900';
@@ -94,5 +94,49 @@ describe('v4 mint transaction', () => {
     // constructors throw a bare tiny-invariant Error for this, not a UniswapSdkError —
     // this asserts the wrapper still normalizes it rather than leaking the raw invariant.
     expectSdkError({ ...baseParams, tickLower: -61 });
+  });
+});
+
+describe('v4 mint calldata review', () => {
+  const expected = { currency0: token.address as Address, currency1: other.address as Address, recipient };
+
+  it('round-trips a plain mint back to its own parameters', () => {
+    const material = buildV4MintPositionTransaction(baseParams);
+    const decoded = reviewV4MintPositionCalldata(material.data, expected);
+    expect(decoded.poolKey.currency0.toLowerCase()).toBe(token.address.toLowerCase());
+    expect(decoded.poolKey.currency1.toLowerCase()).toBe(other.address.toLowerCase());
+    expect(decoded.poolKey.fee).toBe(pool.fee);
+    expect(decoded.poolKey.tickSpacing).toBe(pool.tickSpacing);
+    expect(decoded.tickLower).toBe(baseParams.tickLower);
+    expect(decoded.tickUpper).toBe(baseParams.tickUpper);
+    expect(decoded.liquidity).toBe(baseParams.liquidity);
+    expect(decoded.owner.toLowerCase()).toBe(recipient.toLowerCase());
+    expect(decoded.hookData).toBe('0x');
+  });
+
+  it('round-trips a createPool mint through its multicall wrapper', () => {
+    const material = buildV4MintPositionTransaction({ ...baseParams, createPool: true });
+    const decoded = reviewV4MintPositionCalldata(material.data, expected);
+    expect(decoded.tickLower).toBe(baseParams.tickLower);
+    expect(decoded.owner.toLowerCase()).toBe(recipient.toLowerCase());
+  });
+
+  it('round-trips a native-currency0 mint (MINT_POSITION, SETTLE_PAIR, SWEEP)', () => {
+    const nativePool: V4PoolState = { ...pool, currency0: Ether.onChain(1), hooks: zeroAddress };
+    const material = buildV4MintPositionTransaction({ ...baseParams, pool: nativePool });
+    const decoded = reviewV4MintPositionCalldata(material.data, { ...expected, currency0: zeroAddress });
+    expect(decoded.owner.toLowerCase()).toBe(recipient.toLowerCase());
+  });
+
+  it('rejects a mint that targets a different token pair or recipient', () => {
+    const material = buildV4MintPositionTransaction(baseParams);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, currency1: recipient })).toThrow(/different token pair/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, recipient: token.address as Address })).toThrow(/different recipient/);
+  });
+
+  it('rejects calldata that is not one of its own mint builds', () => {
+    expect(() => reviewV4MintPositionCalldata('0x12345678', expected)).toThrow();
+    // A real ERC20 `approve` selector — 4 bytes, no position-manager function matches it.
+    expect(() => reviewV4MintPositionCalldata('0x095ea7b3', expected)).toThrow();
   });
 });
