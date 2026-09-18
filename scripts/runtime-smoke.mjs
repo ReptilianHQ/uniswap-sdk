@@ -22,6 +22,16 @@ assert.equal(reviewV3ApprovalCalldata(
   robinhoodUniswapV3Testnet.contracts.nonfungiblePositionManager,
 ), 1n);
 
+const { buildV4MintPermitBatchTypedData } = await import('../dist/permit2.js');
+const permitTypedData = buildV4MintPermitBatchTypedData({
+  chainId: 1,
+  spender: '0x0000000000000000000000000000000000000900',
+  details: [{ token: '0x0000000000000000000000000000000000000010', amount: 1n, expiration: 9_999_999_999n, nonce: 0n }],
+  sigDeadline: 9_999_999_999n,
+});
+assert.equal(permitTypedData.domain.name, 'Permit2');
+assert.equal(permitTypedData.domain.verifyingContract, '0x000000000022D473030F116dDEE9F6B43aC78BA3');
+
 const require = createRequire(import.meta.url);
 const { Ether, Token } = require('@uniswap/sdk-core');
 const { Pool } = require('@uniswap/v4-sdk');
