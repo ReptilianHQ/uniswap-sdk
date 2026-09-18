@@ -1,5 +1,5 @@
 import type { Currency } from '@uniswap/sdk-core';
-import { decodeAbiParameters, decodeFunctionData, parseAbiParameters, type Address, type Hex } from 'viem';
+import { decodeAbiParameters, decodeFunctionData, parseAbiParameters, zeroAddress, type Address, type Hex } from 'viem';
 import { Percent, Pool, Position, V4PositionManager } from './official-sdk.cjs';
 import { checkedAddress } from './pool.js';
 import { invalid, UniswapSdkError } from './errors.js';
@@ -100,16 +100,20 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
 const MINT_POSITION_ACTION = 2;
 const SETTLE_PAIR_ACTION = 13;
 const SWEEP_ACTION = 20;
+/** PositionManager's `msgSender()` sentinel; the only address `SWEEP` may refund to. */
+const MSG_SENDER: Address = '0x0000000000000000000000000000000000000001';
 
 const unlockDataParams = parseAbiParameters('bytes actions, bytes[] params');
+const poolKeyStruct = '(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)';
 const mintPositionParams = parseAbiParameters(
-  '(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, int24 tickLower, int24 tickUpper, uint256 liquidity, uint128 amount0Max, uint128 amount1Max, address owner, bytes hookData',
+  `${poolKeyStruct} poolKey, int24 tickLower, int24 tickUpper, uint256 liquidity, uint128 amount0Max, uint128 amount1Max, address owner, bytes hookData`,
 );
 const settlePairParams = parseAbiParameters('address currency0, address currency1');
 const sweepParams = parseAbiParameters('address currency, address to');
 
+export type V4PoolKeyMaterial = { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address };
 export type V4MintActionParams = {
-  poolKey: { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address };
+  poolKey: V4PoolKeyMaterial;
   tickLower: number;
   tickUpper: number;
   liquidity: bigint;
@@ -117,6 +121,7 @@ export type V4MintActionParams = {
   amount1Max: bigint;
   owner: Address;
   hookData: Hex;
+  deadline: bigint;
 };
 
 function same(a: string, b: string): boolean {
@@ -136,6 +141,11 @@ function decodeActionIds(actions: Hex): number[] {
   return ids;
 }
 
+function samePoolKey(a: V4PoolKeyMaterial, b: V4PoolKeyMaterial): boolean {
+  return same(a.currency0, b.currency0) && same(a.currency1, b.currency1)
+    && a.fee === b.fee && a.tickSpacing === b.tickSpacing && same(a.hooks, b.hooks);
+}
+
 /**
  * Decodes and verifies calldata built by `buildV4MintPositionTransaction`: a
  * `modifyLiquidities` call — optionally wrapped in a `multicall` alongside pool
@@ -143,35 +153,47 @@ function decodeActionIds(actions: Hex): number[] {
  * for a native-currency0 mint, a trailing SWEEP. This is the only action shape
  * that function produces; any other sequence is calldata this decoder does not
  * recognise as its own and refuses, rather than guessing at its meaning.
+ *
+ * `expected` must name the full pool (including `hooks`), not just the token
+ * pair — a mint into the same pair through a different, unreviewed hook is a
+ * different pool with different economics, not a cosmetic difference.
  */
-export function reviewV4MintPositionCalldata(data: Hex, expected: {
-  currency0: Address; currency1: Address; recipient: Address;
-}): V4MintActionParams {
+export function reviewV4MintPositionCalldata(data: Hex, expected: V4PoolKeyMaterial & { recipient: Address }): V4MintActionParams {
   try {
     const decoded = decodeFunctionData({ abi: v4PositionManagerAbi, data });
     let unlockData: Hex;
+    let deadline: bigint;
+    let initialization: { key: V4PoolKeyMaterial; sqrtPriceX96: bigint } | undefined;
     if (decoded.functionName === 'multicall') {
       const calls = decoded.args[0].map(call => decodeFunctionData({ abi: v4PositionManagerAbi, data: call }));
       if (calls.length !== 2 || calls[0]!.functionName !== 'initializePool' || calls[1]!.functionName !== 'modifyLiquidities') {
         mismatch('Mint calldata multicall must contain only pool initialization followed by one mint');
       }
-      unlockData = calls[1]!.args[0] as Hex;
+      initialization = { key: calls[0]!.args[0] as V4PoolKeyMaterial, sqrtPriceX96: calls[0]!.args[1] as bigint };
+      [unlockData, deadline] = calls[1]!.args as [Hex, bigint];
     } else if (decoded.functionName === 'modifyLiquidities') {
-      unlockData = decoded.args[0] as Hex;
+      [unlockData, deadline] = decoded.args;
     } else {
       return mismatch('Mint calldata is not a position-manager modifyLiquidities call');
     }
 
     const [actionsBytes, actionParams] = decodeAbiParameters(unlockDataParams, unlockData) as [Hex, readonly Hex[]];
     const actionIds = decodeActionIds(actionsBytes);
+    if (actionIds.length !== actionParams.length) mismatch('Mint calldata has a different number of actions and action parameters');
+    if (actionIds.length < 2 || actionIds.length > 3) mismatch('Mint calldata does not have the action count a plain mint produces');
 
     if (actionIds[0] !== MINT_POSITION_ACTION) mismatch('Mint calldata must begin with a MINT_POSITION action');
     const [poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, owner, hookData] = decodeAbiParameters(
       mintPositionParams,
       actionParams[0]!,
-    ) as [{ currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address }, number, number, bigint, bigint, bigint, Address, Hex];
+    ) as [V4PoolKeyMaterial, number, number, bigint, bigint, bigint, Address, Hex];
+    if (liquidity <= 0n) mismatch('Mint calldata mints non-positive liquidity');
 
-    if (actionIds.length < 2 || actionIds[1] !== SETTLE_PAIR_ACTION) mismatch('MINT_POSITION must be followed by a SETTLE_PAIR');
+    if (initialization && !samePoolKey(initialization.key, poolKey)) {
+      mismatch('Mint pool initialization targets a different pool than the position mint');
+    }
+
+    if (actionIds[1] !== SETTLE_PAIR_ACTION) mismatch('MINT_POSITION must be followed by a SETTLE_PAIR');
     const [settleCurrency0, settleCurrency1] = decodeAbiParameters(settlePairParams, actionParams[1]!) as [Address, Address];
     if (!same(settleCurrency0, poolKey.currency0) || !same(settleCurrency1, poolKey.currency1)) {
       mismatch('SETTLE_PAIR settles a different pair than the minted position');
@@ -179,20 +201,19 @@ export function reviewV4MintPositionCalldata(data: Hex, expected: {
 
     if (actionIds.length === 3) {
       if (actionIds[2] !== SWEEP_ACTION) mismatch('Mint calldata has an unreviewed action after SETTLE_PAIR');
-      decodeAbiParameters(sweepParams, actionParams[2]!);
-    } else if (actionIds.length !== 2) {
-      mismatch('Mint calldata has more actions than a plain mint produces');
+      const [sweepCurrency, sweepTo] = decodeAbiParameters(sweepParams, actionParams[2]!) as [Address, Address];
+      if (!same(sweepCurrency, zeroAddress) && !same(sweepCurrency, poolKey.currency0)) {
+        mismatch('SWEEP refunds an unexpected currency');
+      }
+      if (!same(sweepTo, MSG_SENDER)) mismatch('SWEEP sends the refund to an unexpected recipient');
     }
 
-    const expectedPair = [expected.currency0.toLowerCase(), expected.currency1.toLowerCase()].sort().join(':');
-    if ([poolKey.currency0.toLowerCase(), poolKey.currency1.toLowerCase()].sort().join(':') !== expectedPair) {
-      mismatch('Mint calldata targets a different token pair');
-    }
+    if (!samePoolKey(poolKey, expected)) mismatch('Mint calldata targets a different pool than expected');
     if (!same(owner, expected.recipient)) mismatch('Mint calldata sends the position NFT to a different recipient');
 
-    return { poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, owner, hookData };
+    return { poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, owner, hookData, deadline };
   } catch (error) {
     if (error instanceof UniswapSdkError) throw error;
-    return mismatch('Mint calldata contains undecodable position-manager calls');
+    throw new UniswapSdkError('CALLDATA_MISMATCH', 'Mint calldata contains undecodable position-manager calls', { cause: error });
   }
 }
