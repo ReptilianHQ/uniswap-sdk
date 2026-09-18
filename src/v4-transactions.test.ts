@@ -62,7 +62,16 @@ describe('v4 mint transaction', () => {
     expect(material.value).toBeGreaterThan(0n);
   });
 
-  it('rejects non-positive liquidity, inverted ticks, out-of-range slippage, and createPool without a starting price', () => {
+  function expectSdkError(input: Parameters<typeof buildV4MintPositionTransaction>[0]) {
+    try {
+      buildV4MintPositionTransaction(input);
+      expect.unreachable(`expected ${JSON.stringify(input)} to be rejected`);
+    } catch (error) {
+      expect(isUniswapSdkError(error)).toBe(true);
+    }
+  }
+
+  it('rejects non-positive liquidity, inverted ticks, out-of-range slippage, and createPool without a starting price as UniswapSdkError', () => {
     for (const bad of [
       { liquidity: 0n },
       { tickLower: 60, tickUpper: -60 },
@@ -70,17 +79,19 @@ describe('v4 mint transaction', () => {
       { slippageToleranceBps: -1 },
       { slippageToleranceBps: 10_001 },
     ]) {
-      expect(() => buildV4MintPositionTransaction({ ...baseParams, ...bad })).toThrow();
+      expectSdkError({ ...baseParams, ...bad });
     }
-    expect(() => buildV4MintPositionTransaction({ ...baseParams, createPool: true, pool: { ...pool, sqrtPriceX96: 0n } })).toThrow();
+    expectSdkError({ ...baseParams, createPool: true, pool: { ...pool, sqrtPriceX96: 0n } });
   });
 
-  it('normalizes a rejected input into a UniswapSdkError', () => {
-    try {
-      buildV4MintPositionTransaction({ ...baseParams, positionManager: 'not-an-address' as Address });
-      expect.unreachable('an invalid position manager address must be rejected');
-    } catch (error) {
-      expect(isUniswapSdkError(error)).toBe(true);
-    }
+  it('normalizes an invalid position manager address into a UniswapSdkError', () => {
+    expectSdkError({ ...baseParams, positionManager: 'not-an-address' as Address });
+  });
+
+  it('normalizes an official-SDK invariant failure (tick not a multiple of tickSpacing) into a UniswapSdkError', () => {
+    // tickSpacing is 60; -61 is not a multiple of it. The official SDK's Position/Pool
+    // constructors throw a bare tiny-invariant Error for this, not a UniswapSdkError —
+    // this asserts the wrapper still normalizes it rather than leaking the raw invariant.
+    expectSdkError({ ...baseParams, tickLower: -61 });
   });
 });

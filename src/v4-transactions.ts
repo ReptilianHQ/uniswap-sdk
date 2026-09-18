@@ -61,32 +61,32 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
   if (input.createPool && input.pool.sqrtPriceX96 <= 0n) invalid('createPool requires a positive initial sqrtPriceX96');
   const positionManager = checkedAddress(input.positionManager);
   const recipient = checkedAddress(input.recipient);
-
-  const pool = new Pool(
-    input.pool.currency0,
-    input.pool.currency1,
-    input.pool.fee,
-    input.pool.tickSpacing,
-    checkedAddress(input.pool.hooks),
-    input.pool.sqrtPriceX96.toString(),
-    input.pool.liquidity.toString(),
-    input.pool.tickCurrent,
-  );
-  const position = new Position({
-    pool,
-    liquidity: input.liquidity.toString(),
-    tickLower: input.tickLower,
-    tickUpper: input.tickUpper,
-  });
+  const slippageTolerance = slippagePercent(input.slippageToleranceBps);
 
   let params;
   try {
+    const pool = new Pool(
+      input.pool.currency0,
+      input.pool.currency1,
+      input.pool.fee,
+      input.pool.tickSpacing,
+      checkedAddress(input.pool.hooks),
+      input.pool.sqrtPriceX96.toString(),
+      input.pool.liquidity.toString(),
+      input.pool.tickCurrent,
+    );
+    const position = new Position({
+      pool,
+      liquidity: input.liquidity.toString(),
+      tickLower: input.tickLower,
+      tickUpper: input.tickUpper,
+    });
     params = V4PositionManager.addCallParameters(position, {
       recipient,
       createPool: input.createPool ?? false,
       ...(input.createPool ? { sqrtPriceX96: input.pool.sqrtPriceX96.toString() } : {}),
       useNative: pool.currency0.isNative ? pool.currency0 : undefined,
-      slippageTolerance: slippagePercent(input.slippageToleranceBps),
+      slippageTolerance,
       hookData: input.hookData,
       deadline: input.deadlineSeconds.toString(),
     });
