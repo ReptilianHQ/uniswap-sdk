@@ -62,7 +62,10 @@ describe('v4 mint Permit2 typed data', () => {
     // the mainnet address here, producing a signature Permit2 never sees on that chain.
     const typedData = buildV4MintPermitBatchTypedData({ ...baseInput, chainId: 324 });
     expect(typedData.domain.verifyingContract).toBe(zkSyncPermit2Address);
-    expect(buildV4MintPermitBatchTypedData({ ...baseInput, chainId: 1 }).domain.verifyingContract).toBe(permit2Address);
+    expect(typedData.domain.chainId).toBe(324);
+    const mainnet = buildV4MintPermitBatchTypedData({ ...baseInput, chainId: 1 });
+    expect(mainnet.domain.verifyingContract).toBe(permit2Address);
+    expect(mainnet.domain.chainId).toBe(1);
   });
 
   it('matches the official Permit2 SDK\'s own EIP-712 digest exactly', () => {
