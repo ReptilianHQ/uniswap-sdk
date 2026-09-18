@@ -39,6 +39,10 @@ const pool: V4PoolState = {
   tickCurrent: 0,
 };
 
+// hooks (0x...2044) decodes to exactly these three flags — the same real Argus hook
+// fixture used in hooks.test.ts, reused here as "a hook whose permissions are known".
+const modelledHookPermissions = ['beforeInitialize', 'afterSwap', 'afterSwapReturnsDelta'] as const;
+
 const baseParams = {
   positionManager,
   pool,
@@ -48,6 +52,7 @@ const baseParams = {
   recipient,
   slippageToleranceBps: 50,
   deadlineSeconds: 9_999_999_999n,
+  modelledHookPermissions,
 };
 
 function expectSdkError(input: Parameters<typeof buildV4MintPositionTransaction>[0]) {
@@ -112,12 +117,27 @@ describe('v4 mint transaction', () => {
     // this asserts the wrapper still normalizes it rather than leaking the raw invariant.
     expectSdkError({ ...baseParams, tickLower: -61 });
   });
+
+  it('refuses to mint into a hooked pool with no modelledHookPermissions supplied', () => {
+    expectSdkError({ ...baseParams, modelledHookPermissions: undefined });
+  });
+
+  it('refuses to mint into a hook that implements a permission flag outside modelledHookPermissions', () => {
+    // hooks (0x...2044) also sets afterSwap; omitting it from the modelled set must be refused,
+    // not silently ignored — proves this actually decodes the real hook, not just checks presence.
+    expectSdkError({ ...baseParams, modelledHookPermissions: ['beforeInitialize', 'afterSwapReturnsDelta'] });
+  });
+
+  it('does not require modelledHookPermissions when the pool has no hook', () => {
+    const unhookedPool: V4PoolState = { ...pool, hooks: zeroAddress };
+    expect(() => buildV4MintPositionTransaction({ ...baseParams, pool: unhookedPool, modelledHookPermissions: undefined })).not.toThrow();
+  });
 });
 
 describe('v4 mint calldata review', () => {
   const expected = {
     currency0: token.address as Address, currency1: other.address as Address,
-    fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient,
+    fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient, modelledHookPermissions,
   };
 
   it('round-trips a plain mint back to its own parameters', () => {
@@ -164,6 +184,14 @@ describe('v4 mint calldata review', () => {
     expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, hooks: recipient })).toThrow(/different pool/);
     expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, fee: 500 })).toThrow(/different pool/);
     expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, recipient: token.address as Address })).toThrow(/different recipient/);
+  });
+
+  it('rejects review of a hooked mint with no expected modelled permissions, or a narrower set than the real hook implements', () => {
+    const material = buildV4MintPositionTransaction(baseParams);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, modelledHookPermissions: undefined }))
+      .toThrow(/no modelled permissions/);
+    expect(() => reviewV4MintPositionCalldata(material.data, { ...expected, modelledHookPermissions: ['beforeInitialize', 'afterSwapReturnsDelta'] }))
+      .toThrow(/unmodelled permissions/);
   });
 
   it('rejects a createPool mint whose initialization targets a different pool than the mint', () => {
@@ -231,7 +259,7 @@ describe('v4 mint with a Permit2 batch approval', () => {
   it('round-trips through reviewV4MintPositionCalldata, and combines with createPool as a 3-call multicall', () => {
     const expected = {
       currency0: token.address as Address, currency1: other.address as Address,
-      fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient,
+      fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient, modelledHookPermissions,
       batchPermit: { owner: batchPermit.owner, spender: batchPermit.permitBatch.spender, sigDeadline: batchPermit.permitBatch.sigDeadline, details: batchPermit.permitBatch.details },
     };
     const plain = buildV4MintPositionTransaction({ ...baseParams, batchPermit });
@@ -258,7 +286,7 @@ describe('v4 mint with a Permit2 batch approval', () => {
 
   it('rejects review of a permitBatch mint with no expected approval, or a mismatched one', () => {
     const material = buildV4MintPositionTransaction({ ...baseParams, batchPermit });
-    const expected = { currency0: token.address as Address, currency1: other.address as Address, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient };
+    const expected = { currency0: token.address as Address, currency1: other.address as Address, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient, modelledHookPermissions };
     expect(() => reviewV4MintPositionCalldata(material.data, expected)).toThrow(/no expected approval/);
     expect(() => reviewV4MintPositionCalldata(material.data, {
       ...expected,
@@ -301,7 +329,7 @@ describe('v4 mint with a Permit2 batch approval', () => {
 
     const expected = {
       currency0: token.address as Address, currency1: other.address as Address,
-      fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient,
+      fee: pool.fee, tickSpacing: pool.tickSpacing, hooks, recipient, modelledHookPermissions,
       batchPermit: { owner: recipient, spender: positionManager, sigDeadline: baseParams.deadlineSeconds, details: [detailA, detailB] },
     };
     expect(() => reviewV4MintPositionCalldata(forged, expected)).toThrow(/lists the same token more than once/);
