@@ -68,6 +68,10 @@
       "types": "./dist/providers.d.ts",
       "import": "./dist/providers.js"
     },
+    "./permit2": {
+      "types": "./dist/permit2.d.ts",
+      "import": "./dist/permit2.js"
+    },
     "./provenance/mainnet.json": "./provenance/mainnet.json",
     "./provenance/testnet.json": "./provenance/testnet.json"
   },
@@ -88,8 +92,10 @@
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@uniswap/permit2-sdk": "1.4.0",
     "@uniswap/sdk-core": "7.19.2",
-    "@uniswap/v4-sdk": "2.3.3"
+    "@uniswap/v4-sdk": "2.3.3",
+    "tslib": "2.8.1"
   },
   "peerDependencies": {
     "viem": ">=2.55.0 <3"
