@@ -3,8 +3,8 @@
   "version": "1.2.2",
   "source": "ReptilianHQ/reptilian:scripts/artifacts",
   "files": {
-    "publisher.mjs": "90ed9e76bd4db44dfb7751af9479633a3d8f50fae687dde0d86f62f4c28e4d6e",
-    "publisher.test.mjs": "98a4324ef69257e5f82e2af305402ff6083257a4af4e3374d93ac6b241d21305",
+    "publisher.mjs": "579f57b801068868dc8f17b1b4da87798c5da89b5ad504a04df719346db4d272",
+    "publisher.test.mjs": "df51a8439ed7e3b22f10e8f6d48a3e4523dbe4dde60ce5556201b7b07cc2ca55",
     "check.mjs": "358bb3ebd583cd166e66abe95262c4b6b44dc501092dccb73d4b8c0bdf2e478c"
   }
 }
