@@ -153,17 +153,51 @@ console.log(JSON.stringify([{filename:'archive.tgz'}]));
   } finally { process.env.PATH = previousPath; rmSync(root, { recursive: true, force: true }); }
 });
 
-test('registry lookup treats GitHub Packages empty success as an absent version', () => {
-  const root = mkdtempSync(join(tmpdir(), 'publisher-npm-lookup-'));
-  const previousPath = process.env.PATH;
+// npm view returns empty stdout with exit 0 against these registries regardless
+// of the actual result (reproduced directly against npm.pkg.github.com), so
+// registryLookup fetches the packument itself instead of shelling out to npm.
+test('registry lookup resolves an exact version and a dist-tag, and treats either as absent when unpublished', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousToken = process.env.NODE_AUTH_TOKEN;
+  process.env.NODE_AUTH_TOKEN = 'test-token';
   try {
-    writeFileSync(join(root, 'npm'), `#!${process.execPath}
-import assert from 'node:assert/strict';
-assert.deepEqual(process.argv.slice(2), ['view','@example/consumer@1.2.3','--json','--registry','https://npm.pkg.github.com']);
-`, { mode: 0o755 });
-    process.env.PATH = `${root}:${previousPath}`;
-    assert.equal(registryLookup('@example/consumer@1.2.3', 'https://npm.pkg.github.com'), null);
-  } finally { process.env.PATH = previousPath; rmSync(root, { recursive: true, force: true }); }
+    globalThis.fetch = async (url, init) => {
+      assert.equal(url, 'https://npm.pkg.github.com/%40example%2Fconsumer');
+      assert.equal(init.headers.Authorization, 'Bearer test-token');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          'dist-tags': { latest: '1.2.3' },
+          versions: { '1.2.3': { name: '@example/consumer', version: '1.2.3' } },
+        }),
+      };
+    };
+    assert.deepEqual(await registryLookup('@example/consumer@1.2.3', 'https://npm.pkg.github.com'), { name: '@example/consumer', version: '1.2.3' });
+    assert.deepEqual(await registryLookup('@example/consumer@latest', 'https://npm.pkg.github.com'), { name: '@example/consumer', version: '1.2.3' });
+    assert.equal(await registryLookup('@example/consumer@9.9.9', 'https://npm.pkg.github.com'), null);
+    assert.equal(await registryLookup('@example/consumer@rc', 'https://npm.pkg.github.com'), null);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.NODE_AUTH_TOKEN;
+    else process.env.NODE_AUTH_TOKEN = previousToken;
+  }
+});
+
+test('registry lookup accepts a missing package and fails closed on auth or transport errors', async () => {
+  const previousFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: false, status: 404 });
+    assert.equal(await registryLookup('@example/consumer@9.9.9', 'https://npm.pkg.github.com'), null);
+
+    globalThis.fetch = async () => ({ ok: false, status: 401 });
+    await assert.rejects(registryLookup('@example/consumer@9.9.9', 'https://npm.pkg.github.com'), /refusing publication/);
+
+    globalThis.fetch = async () => { throw new Error('ECONNRESET'); };
+    await assert.rejects(registryLookup('@example/consumer@9.9.9', 'https://npm.pkg.github.com'), /refusing publication/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test('registry metadata may omit source identity but verified tarball must contain it', () => fixture(({ root }) => {

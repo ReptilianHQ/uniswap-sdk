@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -92,22 +92,34 @@ export function assertDownloaded(expected, bytes) {
   assert.equal(manifest.version, expected.version, 'Tarball version mismatch');
   assert.deepEqual(manifest.reptilianRelease, expected.reptilianRelease, 'Tarball source identity mismatch');
 }
-export function registryLookup(spec, registry) {
-  const result = spawnSync('npm', ['view', spec, '--json', '--registry', registry], { cwd: tmpdir(), encoding: 'utf8' });
-  if (result.error) throw result.error;
-  if (result.status === 0) {
-    // GitHub Packages reports a missing exact stable version as a successful
-    // command with empty stdout when prerelease versions already exist.
-    if (result.stdout.trim() === '') return null;
-    const parsed = JSON.parse(result.stdout);
-    assert.ok(parsed && !Array.isArray(parsed), `Unexpected registry response for ${spec}`);
-    return parsed;
+/**
+ * `npm view <spec> --json` reliably returns empty stdout with exit 0 against
+ * both supported registries (reproduced directly against npm.pkg.github.com
+ * across multiple npm versions, with the underlying registry GET itself
+ * returning 200 and a well-formed body) -- an npm CLI behavior, not a problem
+ * with the published data. The previous fallback of treating empty stdout as
+ * "not found" silently reported existing versions as missing. Fetch the
+ * packument directly instead, and resolve `spec`'s trailing `@version` or
+ * `@dist-tag` from it, matching `npm view`'s own resolution.
+ */
+export async function registryLookup(spec, registry) {
+  const lastAt = spec.lastIndexOf('@');
+  const name = spec.slice(0, lastAt);
+  const versionOrTag = spec.slice(lastAt + 1);
+  let response;
+  try {
+    response = await fetch(`${registry}/${encodeURIComponent(name)}`, {
+      headers: { Authorization: `Bearer ${process.env.NODE_AUTH_TOKEN ?? ''}` },
+    });
+  } catch (error) {
+    throw new Error(`Registry lookup failed for ${spec}; refusing publication`, { cause: error });
   }
-  // Only a structured E404 means absent. Auth, timeout and transport errors fail closed.
-  let error;
-  try { error = JSON.parse(result.stdout).error; } catch { /* not a registry JSON response */ }
-  if (error?.code === 'E404') return null;
-  throw new Error(`Registry lookup failed for ${spec} (exit ${result.status}); refusing publication`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Registry lookup failed for ${spec} (HTTP ${response.status}); refusing publication`);
+  const packument = await response.json();
+  assert.ok(packument && !Array.isArray(packument), `Unexpected registry response for ${spec}`);
+  const version = packument.versions?.[versionOrTag] ? versionOrTag : packument['dist-tags']?.[versionOrTag];
+  return version ? packument.versions?.[version] ?? null : null;
 }
 export function registryDownload(spec, registry) {
   const staging = mkdtempSync(join(tmpdir(), 'artifact-registry-bytes-'));
@@ -120,30 +132,31 @@ export function registryDownload(spec, registry) {
 export async function publishRelease(record, { lookup, publish, tag, download, wait = () => new Promise(resolve => setTimeout(resolve, 5000)) }) {
   assert.equal(typeof download, 'function', 'Registry tarball download is required for immutable-byte verification');
   // Preflight the entire group before the first write, including channel rollback.
-  const states = record.packages.map(pkg => {
-    const existing = lookup(`${pkg.name}@${pkg.version}`, record.registry);
+  const states = [];
+  for (const pkg of record.packages) {
+    const existing = await lookup(`${pkg.name}@${pkg.version}`, record.registry);
     if (existing) {
       assertPublished(pkg, existing);
       assertDownloaded(pkg, download(`${pkg.name}@${pkg.version}`, record.registry));
     }
-    const current = lookup(`${pkg.name}@${record.channel}`, record.registry);
+    const current = await lookup(`${pkg.name}@${record.channel}`, record.registry);
     assert.ok(!current || compareVersions(current.version, pkg.version) <= 0, `Refusing to move ${pkg.name}@${record.channel} backwards`);
     const repair = existing && current?.version !== pkg.version;
     assert.ok(!repair || record.registry === 'https://npm.pkg.github.com', `Existing ${pkg.name} needs authenticated channel repair; npm OIDC only authorizes publish`);
-    return { pkg, existing, repair };
-  });
+    states.push({ pkg, existing, repair });
+  }
   for (const { pkg, existing, repair } of states) {
     if (!existing) publish(pkg, record);
     // Repair an interrupted channel update even when the immutable version exists.
     if (repair) {
-      const current = lookup(`${pkg.name}@${record.channel}`, record.registry);
+      const current = await lookup(`${pkg.name}@${record.channel}`, record.registry);
       assert.ok(!current || compareVersions(current.version, pkg.version) <= 0, `Refusing to move ${pkg.name}@${record.channel} backwards`);
       if (current?.version !== pkg.version) tag(pkg, record);
     }
     let verified = false;
     for (let attempt = 0; attempt < 6; attempt++) {
-      const exact = lookup(`${pkg.name}@${pkg.version}`, record.registry);
-      const channel = lookup(`${pkg.name}@${record.channel}`, record.registry);
+      const exact = await lookup(`${pkg.name}@${pkg.version}`, record.registry);
+      const channel = await lookup(`${pkg.name}@${record.channel}`, record.registry);
       if (exact) assertPublished(pkg, exact);
       if (exact && channel?.version === pkg.version) {
         assertPublished(pkg, channel);
