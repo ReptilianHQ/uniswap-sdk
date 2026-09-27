@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
-import { robinhoodUniswapV3Mainnet, robinhoodUniswapV3Testnet } from './deployments.js';
+import { arcUniswapV4Mainnet, robinhoodUniswapV3Mainnet, robinhoodUniswapV3Testnet } from './deployments.js';
 
 function provenance(network: 'mainnet' | 'testnet'): Record<string, unknown> {
   return JSON.parse(readFileSync(new URL(`../provenance/${network}.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
@@ -25,5 +25,62 @@ describe('Uniswap v3 deployment provenance', () => {
     for (const [name, address] of Object.entries(deployment.contracts)) {
       expect(getAddress(record.contracts[name])).toBe(address);
     }
+  });
+});
+
+describe('Arc Uniswap v4 deployment provenance', () => {
+  it('keeps source, runtime, block, and wiring evidence aligned with the exported deployment', () => {
+    const record = JSON.parse(
+      readFileSync(new URL('../provenance/arc-mainnet-v4.json', import.meta.url), 'utf8'),
+    ) as {
+      deploymentId: string;
+      chainId: number;
+      referenceBlock: { number: string; hash: string };
+      contracts: Record<string, {
+        address: string;
+        runtimeCodeHash: string;
+        sourceCommit?: string;
+        sourcePackageCommit?: string;
+        deployerArtifactPath?: string;
+        sourceContractPath?: string;
+        deploymentTransaction?: string;
+        sourceInitcodeHash?: string;
+        deploymentManifestInputHash?: string;
+        proxy?: boolean;
+      }>;
+      positionManagerWiring: Record<string, string>;
+    };
+
+    expect(record).toMatchObject({
+      deploymentId: arcUniswapV4Mainnet.id,
+      chainId: arcUniswapV4Mainnet.chainId,
+      referenceBlock: {
+        number: arcUniswapV4Mainnet.referenceBlock.number.toString(),
+        hash: arcUniswapV4Mainnet.referenceBlock.hash,
+      },
+    });
+    for (const [name, address] of Object.entries(arcUniswapV4Mainnet.contracts)) {
+      expect(getAddress(record.contracts[name].address)).toBe(address);
+      expect(record.contracts[name].runtimeCodeHash).toBe(arcUniswapV4Mainnet.runtimeCodeHashes[name as keyof typeof arcUniswapV4Mainnet.contracts]);
+    }
+    for (const [name, artifact] of Object.entries(arcUniswapV4Mainnet.buildArtifacts)) {
+      expect(record.contracts[name]).toMatchObject({
+        sourceCommit: artifact.sourceCommit,
+        sourcePackageCommit: artifact.sourcePackageCommit,
+        deployerArtifactPath: artifact.deployerArtifactPath,
+        sourceContractPath: artifact.sourceContractPath,
+        deploymentTransaction: artifact.deploymentTransaction,
+        sourceInitcodeHash: artifact.sourceInitcodeHash,
+        deploymentManifestInputHash: artifact.deploymentManifestInputHash,
+        proxy: artifact.proxy,
+      });
+    }
+    expect(record.positionManagerWiring).toMatchObject({
+      poolManager: arcUniswapV4Mainnet.contracts.poolManager,
+      permit2: arcUniswapV4Mainnet.contracts.permit2,
+      wrappedNative: arcUniswapV4Mainnet.positionManagerWiring.wrappedNative,
+      tokenDescriptor: arcUniswapV4Mainnet.positionManagerWiring.tokenDescriptor,
+      unsubscribeGasLimit: arcUniswapV4Mainnet.positionManagerWiring.unsubscribeGasLimit.toString(),
+    });
   });
 });

@@ -13,6 +13,8 @@
     "provenance",
     "scripts/check-conformance.mjs",
     "scripts/verify-v3-deployments.mjs",
+    "scripts/verify-v4-deployments.mjs",
+    "scripts/verify-v4-source-build.mjs",
     "README.md",
     "RELEASING.md",
     "NOTICE",
@@ -73,7 +75,8 @@
       "import": "./dist/permit2.js"
     },
     "./provenance/mainnet.json": "./provenance/mainnet.json",
-    "./provenance/testnet.json": "./provenance/testnet.json"
+    "./provenance/testnet.json": "./provenance/testnet.json",
+    "./provenance/arc-mainnet-v4.json": "./provenance/arc-mainnet-v4.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -83,7 +86,7 @@
     "test:run": "vitest run src",
     "test:runtime": "node scripts/runtime-smoke.mjs",
     "test:fork": "vitest run src/v3-mainnet.fork.test.ts",
-    "test:live-compatibility": "npm run build && node scripts/verify-v3-deployments.mjs",
+    "test:live-compatibility": "npm run build && node scripts/verify-v3-deployments.mjs && node scripts/verify-v4-deployments.mjs",
     "test:consumer": "node examples/read-only-consumer.mjs",
     "check:conformance": "node scripts/check-conformance.mjs . && node --test scripts/check-conformance.node-test.mjs",
     "check:publisher": "node scripts/artifacts/check.mjs",

@@ -8,7 +8,8 @@ It never owns keys, authorization policy, transaction submission, persistence, o
 ## Capabilities and ownership
 
 - `./v4`: full pool identity, Initialize-log normalization, pool state,
-  exact-input Quoter simulation, ordered quote batches, initialized tick windows.
+  exact-input Quoter simulation, ordered quote batches, initialized tick windows,
+  reviewed Arc infrastructure, and unsigned position-mint material with strict review.
 - `./v3`: Robinhood v3 deployment identity, compatibility checks, unsigned
   position transaction builders, strict calldata review, and receipt evidence.
 - `./deployments`, `./compatibility`, `./transactions`, `./receipts`: stable
@@ -72,8 +73,10 @@ A complete deterministic consumer example is available in
 the published package subpaths and demonstrates a pool observation, a partial
 tick result, and branching on `isUniswapSdkError`.
 
-The v4 `reviewedDeployment` contains chainId, PoolManager, StateView and Quoter addresses.
-There are no implicit v4 Robinhood or Arc deployments. Hosts own endpoint selection,
+Generic v4 reads still require an explicit `reviewedDeployment`. Arc hosts may select
+`arcUniswapV4Mainnet` and must run `verifyArcUniswapV4Compatibility` before relying on
+its pinned shared Uniswap infrastructure. This does not authenticate Argus Portal,
+hook, locker, splitter, tracker, or fee semantics. Hosts own endpoint selection,
 finality, capability policy and secret storage. For multicall consumers, use
 `quoteV4WithBatch`, `v4PoolStateCalls`, `decodeV4PoolState`,
 `readV4PoolStatesWithBatch`, and `readV4TicksWithBatch` from `./batch`.
@@ -84,9 +87,10 @@ the host must check chain/deployment identity and Quoter multicall compatibility
 
 The direct-client RPC operations check chain identity (the `./batch` host owns that check). Pool/tick reads check StateView's
 PoolManager pointer; quotes check the Quoter pointer at the observation block.
-`verifyV4DeploymentWiring` checks both pointers. This proves wiring only: a contract that
-returns the expected pointer is not necessarily the reviewed implementation.
-Source/code verification and hook-specific compatibility remain release gates.
+`verifyV4DeploymentWiring` checks both pointers. This proves wiring only. Arc's stronger
+compatibility check pins the canonical block, exact runtime hashes, and immutable manager
+wiring; the separate source-build verifier reproduces the retained deployment artifacts.
+Hook-specific compatibility remains an adapter release gate.
 
 All state calls in an operation use one block number. Quote batches use up to
 four concurrent individual eth_calls by default (maximum 16; at most 256 quotes).
@@ -146,21 +150,20 @@ package-subpath consumer example. `npm run test:fork` additionally executes an
 SDK-built and reviewed full position close against the pinned Anvil fork
 documented in [docs/FORK_TESTING.md](./docs/FORK_TESTING.md).
 
-`npm run test:live-compatibility` rechecks both exported deployments against
-their public RPCs. `UNISWAP_MAINNET_RPC_URL` and `UNISWAP_TESTNET_RPC_URL` may
-override those read-only endpoints.
+`npm run test:live-compatibility` rechecks the two Robinhood deployments and the Arc v4
+deployment against their public RPCs. `UNISWAP_MAINNET_RPC_URL`,
+`UNISWAP_TESTNET_RPC_URL`, and `UNISWAP_ARC_RPC_URL` may override those read-only
+endpoints. Source reproduction is documented in
+[docs/ARC_V4_PROVENANCE.md](./docs/ARC_V4_PROVENANCE.md).
 
 Releases use the versioned Reptilian publisher, exact main-ancestry tags,
 immutable archive verification, and retained evidence; see [RELEASING.md](./RELEASING.md).
-The v3 surface is capital-moving protocol support: it prepares unsigned calldata
-and verifies protocol-specific transaction and receipt facts. It does not grant
-authorization or submit transactions. The v4 surface remains read-only and does
-not claim Arc deployment or custom-hook compatibility. Never treat a local test
-or a successful wiring check as source verification.
-
-Next: supply Arc contract/RPC details, verify code and hook/custody semantics,
-then add its adapter and a tested managed-position lifecycle. Existing v3-only
-application capability gates remain appropriate until that adapter is verified.
+The v3 and v4 transaction surfaces prepare unsigned calldata and verify protocol-specific
+facts. They do not grant authorization or submit transactions. Arc shared Uniswap source
+and runtime identity are reviewed; Argus custom-hook, fee, custody, and permanently locked
+launch-principal semantics are not claimed here. Keep application write capability gated
+until the launcher adapter proves those semantics with exact-router simulation and pinned
+fork evidence.
 
 ## Protocol provider composition
 

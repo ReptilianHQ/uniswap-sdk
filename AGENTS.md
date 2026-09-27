@@ -4,11 +4,15 @@ Use Node 24 or 26 and the pinned npm version; CI verifies both supported consume
 installable; no parent-relative imports or platform configuration dependencies.
 Run `npm ci --ignore-scripts` and `npm run check` before releasing.
 
-The v4 API is read-only. The v3 API may construct unsigned transaction material
-and verify calldata and receipt evidence. Do not imply bytecode or hook
+The v4 API may construct and review generic unsigned position-mint material; the v3 API may
+construct unsigned transaction material and verify calldata and receipt evidence. Do not imply bytecode or hook
 compatibility from a standard ABI or successful pointer check. Preserve chain,
 manager, PoolKey, currency orientation, hook data, observation block and partial
 failures.
+
+Arc shared Uniswap infrastructure has a pinned source/runtime provenance record.
+Do not extend that claim to launcher Portal, hook, locker, splitter, tracker, fee,
+custody, or locked-principal semantics without launcher-owned evidence.
 
 Keep runtime code hashes, pinned receipt fixtures, and the documented fork block
 in sync with reviewed deployments. Fork tests must use impersonation only; do

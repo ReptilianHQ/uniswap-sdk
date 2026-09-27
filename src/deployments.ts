@@ -28,6 +28,50 @@ export interface UniswapV3Deployment {
   runtimeCodeHashes: UniswapV3RuntimeCodeHashes;
 }
 
+export type ArcUniswapV4DeploymentId = 'arc-mainnet-v4';
+
+export interface ArcUniswapV4Contracts {
+  poolManager: Address;
+  stateView: Address;
+  positionManager: Address;
+  quoter: Address;
+  universalRouter: Address;
+  permit2: Address;
+}
+
+export type ArcUniswapV4ContractName = keyof ArcUniswapV4Contracts;
+export type ArcUniswapV4RuntimeCodeHashes = Readonly<Record<ArcUniswapV4ContractName, Hex>>;
+export type ArcUniswapV4SourceBackedContractName = Exclude<ArcUniswapV4ContractName, 'permit2'>;
+
+export interface ArcUniswapV4BuildArtifact {
+  repository: 'https://github.com/Uniswap/contracts';
+  sourceCommit: string;
+  sourcePackageCommit: string;
+  deployerArtifactPath: string;
+  sourceContractPath: string;
+  deploymentTransaction: Hex;
+  sourceInitcodeHash: Hex;
+  deploymentManifestInputHash: Hex;
+  proxy: false;
+}
+
+export interface ArcUniswapV4Deployment {
+  id: ArcUniswapV4DeploymentId;
+  chainId: 5_042;
+  network: 'arc-mainnet';
+  reviewedAt: string;
+  referenceBlock: Readonly<{ number: bigint; hash: Hex }>;
+  contracts: Readonly<ArcUniswapV4Contracts>;
+  runtimeCodeHashes: ArcUniswapV4RuntimeCodeHashes;
+  buildArtifacts: Readonly<Record<ArcUniswapV4SourceBackedContractName, ArcUniswapV4BuildArtifact>>;
+  positionManagerWiring: Readonly<{
+    wrappedNative: Address;
+    tokenDescriptor: Address;
+    unsubscribeGasLimit: bigint;
+  }>;
+  limitations: readonly string[];
+}
+
 const multicall3 = getAddress('0xca11bde05977b3631167028862be2a173976ca11');
 
 export const robinhoodUniswapV3Mainnet: UniswapV3Deployment = deepFreeze({
@@ -82,10 +126,120 @@ export const robinhoodUniswapV3Testnet: UniswapV3Deployment = deepFreeze({
   },
 });
 
+const uniswapContractsRepository = 'https://github.com/Uniswap/contracts' as const;
+const arcV4SourceCommit = '534603a5bc10d41d57a1c9c34417d472f0dbc0d3';
+const arcUniversalRouterSourceCommit = '02fd1760fa7c05096833c03e01a4143f963c350e';
+
+/**
+ * Official Uniswap v4 infrastructure used by the reviewed Argus Arc flow.
+ *
+ * This proves only the shared Uniswap contracts. Argus Portal, hook, locker,
+ * splitter, and tracker compatibility remains the launcher adapter's gate.
+ */
+export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
+  id: 'arc-mainnet-v4',
+  chainId: 5_042,
+  network: 'arc-mainnet',
+  reviewedAt: '2026-09-27',
+  referenceBlock: {
+    number: 20_889_496n,
+    hash: '0xf3fd31df5afb9d37a216dda53ac751a6a6c08a9c7e96ce4c07fb0df18d40810b',
+  },
+  contracts: {
+    poolManager: getAddress('0x8366a39CC670B4001A1121B8F6A443A643e40951'),
+    stateView: getAddress('0xF3334192D15450CdD385c8B70e03f9A6bD9E673b'),
+    positionManager: getAddress('0x6049c9a0e26405C0985f9E3685C87d0aE917f82B'),
+    quoter: getAddress('0x8dc178efb8111bb0973dd9d722ebeff267c98f94'),
+    universalRouter: getAddress('0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1'),
+    permit2: getAddress('0x000000000022D473030F116dDEE9F6B43aC78BA3'),
+  },
+  runtimeCodeHashes: {
+    poolManager: '0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626',
+    stateView: '0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6',
+    positionManager: '0x5904204586f0290499c357cfcb99489cdc13740b3cd3f26c735f7ef7f2cff1c5',
+    quoter: '0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6',
+    universalRouter: '0x7f949fe75d3483670e17a9ab398a3dc71f285026bba755b48fffd1e42aefad71',
+    permit2: '0x05a793d6bdba8b8715c8f4cef0725ec3a961f567d33ebb2d360f541f19f70c8f',
+  },
+  buildArtifacts: {
+    poolManager: {
+      repository: uniswapContractsRepository,
+      sourceCommit: arcV4SourceCommit,
+      sourcePackageCommit: '46c6834698c48bc4a463a86d8420f4eb1d7f3b75',
+      deployerArtifactPath: 'src/briefcase/deployers/v4-core/PoolManagerDeployer.sol',
+      sourceContractPath: 'src/pkgs/v4-core/src/PoolManager.sol',
+      deploymentTransaction: '0x2a3f2686d0dfc0e8bea88ec2dd006d0cb788410a5d24a946c8d638a32868341e',
+      sourceInitcodeHash: '0x1debe8d2bf707a0cea57ce3cdf7b399d61515897a5698b37050d2d5df0a95b2c',
+      deploymentManifestInputHash: '0x3bdcc016bd6b2f8a19e20bdfa136abbf66ffa7904f42dafa1f5c399e9758544c',
+      proxy: false,
+    },
+    stateView: {
+      repository: uniswapContractsRepository,
+      sourceCommit: arcV4SourceCommit,
+      sourcePackageCommit: '9dafaaecc1e2e1e824eda9d941085f96517d827b',
+      deployerArtifactPath: 'src/briefcase/deployers/v4-periphery/StateViewDeployer.sol',
+      sourceContractPath: 'src/pkgs/v4-periphery/src/lens/StateView.sol',
+      deploymentTransaction: '0xc98e1282cf14d5e63f1f8040403d476b92a5dca03bc838ba0b28bf9cfd42bd2f',
+      sourceInitcodeHash: '0xd1a3b7780b831fbddf3407643b70cd7fc1af1140b0e41ad5f10ff74aac004a82',
+      deploymentManifestInputHash: '0x0e2e13349f8e16c9ea97b0167f2747efd891690c087723e0a920356d274593d3',
+      proxy: false,
+    },
+    positionManager: {
+      repository: uniswapContractsRepository,
+      sourceCommit: arcV4SourceCommit,
+      sourcePackageCommit: '9dafaaecc1e2e1e824eda9d941085f96517d827b',
+      deployerArtifactPath: 'src/briefcase/deployers/v4-periphery/PositionManagerDeployer.sol',
+      sourceContractPath: 'src/pkgs/v4-periphery/src/PositionManager.sol',
+      deploymentTransaction: '0xf3abd73072ecc78cbaa6b23de7c2fb56e69edce1dddefa069155198295b2abd2',
+      sourceInitcodeHash: '0x991742c2de2496144a6f8dce18252393a7d50116b8a3ab320100061d8b6dcca6',
+      deploymentManifestInputHash: '0xb86b0eed6fd57117c2096f57f07f3e2b4644f2c379e1604cab08790aaa9c40bd',
+      proxy: false,
+    },
+    quoter: {
+      repository: uniswapContractsRepository,
+      sourceCommit: arcV4SourceCommit,
+      sourcePackageCommit: '9dafaaecc1e2e1e824eda9d941085f96517d827b',
+      deployerArtifactPath: 'src/briefcase/deployers/v4-periphery/V4QuoterDeployer.sol',
+      sourceContractPath: 'src/pkgs/v4-periphery/src/lens/V4Quoter.sol',
+      deploymentTransaction: '0xb8d7a967c1be562fc9de8f5284a110e631f0fea17eef552852fec6ef67e4844a',
+      sourceInitcodeHash: '0xd915642b6f3b5375c0096fd70eb15cc0676651fa7d588accd1c6002936bb19c2',
+      deploymentManifestInputHash: '0xdb731ce141d9e731a17e60e47d1c0582c9c8684bf76430794d47d1d71fac6260',
+      proxy: false,
+    },
+    universalRouter: {
+      repository: uniswapContractsRepository,
+      sourceCommit: arcUniversalRouterSourceCommit,
+      sourcePackageCommit: '999d561c3ad58fb5cab91b602911f3c75591a9c7',
+      deployerArtifactPath: 'src/briefcase/deployers/universal-router/UniversalRouterDeployer.sol',
+      sourceContractPath: 'src/pkgs/universal-router/contracts/UniversalRouter.sol',
+      deploymentTransaction: '0xf07bb4c6eaccb5b7e128625b0c4fc6bc79f727f9b647a6e81a886bde905345b8',
+      sourceInitcodeHash: '0x8f564cfb262952d7d24e1750426672ccf3a72ca9268e2ec6d97cf846eaae179c',
+      deploymentManifestInputHash: '0xe388b0b5ed9c81077f8fcd9a1724fb35b2c5792380dddd3a19fd02f5bc037f77',
+      proxy: false,
+    },
+  },
+  positionManagerWiring: {
+    wrappedNative: getAddress('0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f'),
+    tokenDescriptor: getAddress('0x516b8a945700D6bBfDeDaa6dcFc4586bA60B8707'),
+    unsubscribeGasLimit: 300_000n,
+  },
+  limitations: [
+    'The exact Uniswap source-backed initcode and pinned Arc runtime are verified separately because constructor immutables change deployed runtime bytes.',
+    'The canonical Permit2 predeploy has an exact runtime pin but is not claimed as an Arc deployment produced by the retained Uniswap/contracts manifest.',
+    'Argus Portal, hook, locker, splitter, tracker, fee, custody, and locked-principal semantics are not established by this shared deployment.',
+    'The retained v4 Quoter is official infrastructure; hook-aware Argus execution must simulate the exact router call and sender rather than assuming Quoter equivalence.',
+  ],
+});
+
 export function getRobinhoodUniswapV3Deployment(chainId: number): UniswapV3Deployment {
   if (chainId === robinhoodUniswapV3Mainnet.chainId) return robinhoodUniswapV3Mainnet;
   if (chainId === robinhoodUniswapV3Testnet.chainId) return robinhoodUniswapV3Testnet;
   throw new UniswapSdkError('CHAIN_MISMATCH', `Unsupported Robinhood Uniswap v3 chain ID ${chainId}`);
+}
+
+export function getArcUniswapV4Deployment(chainId: number): ArcUniswapV4Deployment {
+  if (chainId === arcUniswapV4Mainnet.chainId) return arcUniswapV4Mainnet;
+  throw new UniswapSdkError('CHAIN_MISMATCH', `Unsupported Arc Uniswap v4 chain ID ${chainId}`);
 }
 
 function deepFreeze<T>(value: T): T {

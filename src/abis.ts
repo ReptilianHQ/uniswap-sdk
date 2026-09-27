@@ -19,6 +19,11 @@ export const v4PoolManagerAbi = parseAbi([
   'event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)',
 ]);
 export const v4PositionManagerAbi = parseAbi([
+  'function poolManager() view returns (address)',
+  'function permit2() view returns (address)',
+  'function WETH9() view returns (address)',
+  'function tokenDescriptor() view returns (address)',
+  'function unsubscribeGasLimit() view returns (uint256)',
   'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
   'struct AllowanceTransferDetails { address token; uint160 amount; uint48 expiration; uint48 nonce; }',
   'struct AllowanceTransferPermitBatch { AllowanceTransferDetails[] details; address spender; uint256 sigDeadline; }',
