@@ -41,16 +41,16 @@ export interface ArcUniswapV4Contracts {
 
 export type ArcUniswapV4ContractName = keyof ArcUniswapV4Contracts;
 export type ArcUniswapV4RuntimeCodeHashes = Readonly<Record<ArcUniswapV4ContractName, Hex>>;
-export type ArcUniswapV4SourceBackedContractName = Exclude<ArcUniswapV4ContractName, 'permit2'>;
+export type ArcUniswapV4ArtifactBackedContractName = Exclude<ArcUniswapV4ContractName, 'permit2'>;
 
-export interface ArcUniswapV4BuildArtifact {
+export interface ArcUniswapV4RetainedArtifact {
   repository: 'https://github.com/Uniswap/contracts';
   sourceCommit: string;
   sourcePackageCommit: string;
   deployerArtifactPath: string;
   sourceContractPath: string;
   deploymentTransaction: Hex;
-  sourceInitcodeHash: Hex;
+  generatedInitcodeHash: Hex;
   deploymentManifestInputHash: Hex;
   proxy: false;
 }
@@ -63,7 +63,7 @@ export interface ArcUniswapV4Deployment {
   referenceBlock: Readonly<{ number: bigint; hash: Hex }>;
   contracts: Readonly<ArcUniswapV4Contracts>;
   runtimeCodeHashes: ArcUniswapV4RuntimeCodeHashes;
-  buildArtifacts: Readonly<Record<ArcUniswapV4SourceBackedContractName, ArcUniswapV4BuildArtifact>>;
+  retainedArtifacts: Readonly<Record<ArcUniswapV4ArtifactBackedContractName, ArcUniswapV4RetainedArtifact>>;
   positionManagerWiring: Readonly<{
     wrappedNative: Address;
     tokenDescriptor: Address;
@@ -161,7 +161,7 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
     universalRouter: '0x7f949fe75d3483670e17a9ab398a3dc71f285026bba755b48fffd1e42aefad71',
     permit2: '0x05a793d6bdba8b8715c8f4cef0725ec3a961f567d33ebb2d360f541f19f70c8f',
   },
-  buildArtifacts: {
+  retainedArtifacts: {
     poolManager: {
       repository: uniswapContractsRepository,
       sourceCommit: arcV4SourceCommit,
@@ -169,7 +169,7 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
       deployerArtifactPath: 'src/briefcase/deployers/v4-core/PoolManagerDeployer.sol',
       sourceContractPath: 'src/pkgs/v4-core/src/PoolManager.sol',
       deploymentTransaction: '0x2a3f2686d0dfc0e8bea88ec2dd006d0cb788410a5d24a946c8d638a32868341e',
-      sourceInitcodeHash: '0x1debe8d2bf707a0cea57ce3cdf7b399d61515897a5698b37050d2d5df0a95b2c',
+      generatedInitcodeHash: '0x1debe8d2bf707a0cea57ce3cdf7b399d61515897a5698b37050d2d5df0a95b2c',
       deploymentManifestInputHash: '0x3bdcc016bd6b2f8a19e20bdfa136abbf66ffa7904f42dafa1f5c399e9758544c',
       proxy: false,
     },
@@ -180,7 +180,7 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
       deployerArtifactPath: 'src/briefcase/deployers/v4-periphery/StateViewDeployer.sol',
       sourceContractPath: 'src/pkgs/v4-periphery/src/lens/StateView.sol',
       deploymentTransaction: '0xc98e1282cf14d5e63f1f8040403d476b92a5dca03bc838ba0b28bf9cfd42bd2f',
-      sourceInitcodeHash: '0xd1a3b7780b831fbddf3407643b70cd7fc1af1140b0e41ad5f10ff74aac004a82',
+      generatedInitcodeHash: '0xd1a3b7780b831fbddf3407643b70cd7fc1af1140b0e41ad5f10ff74aac004a82',
       deploymentManifestInputHash: '0x0e2e13349f8e16c9ea97b0167f2747efd891690c087723e0a920356d274593d3',
       proxy: false,
     },
@@ -191,7 +191,7 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
       deployerArtifactPath: 'src/briefcase/deployers/v4-periphery/PositionManagerDeployer.sol',
       sourceContractPath: 'src/pkgs/v4-periphery/src/PositionManager.sol',
       deploymentTransaction: '0xf3abd73072ecc78cbaa6b23de7c2fb56e69edce1dddefa069155198295b2abd2',
-      sourceInitcodeHash: '0x991742c2de2496144a6f8dce18252393a7d50116b8a3ab320100061d8b6dcca6',
+      generatedInitcodeHash: '0x991742c2de2496144a6f8dce18252393a7d50116b8a3ab320100061d8b6dcca6',
       deploymentManifestInputHash: '0xb86b0eed6fd57117c2096f57f07f3e2b4644f2c379e1604cab08790aaa9c40bd',
       proxy: false,
     },
@@ -202,7 +202,7 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
       deployerArtifactPath: 'src/briefcase/deployers/v4-periphery/V4QuoterDeployer.sol',
       sourceContractPath: 'src/pkgs/v4-periphery/src/lens/V4Quoter.sol',
       deploymentTransaction: '0xb8d7a967c1be562fc9de8f5284a110e631f0fea17eef552852fec6ef67e4844a',
-      sourceInitcodeHash: '0xd915642b6f3b5375c0096fd70eb15cc0676651fa7d588accd1c6002936bb19c2',
+      generatedInitcodeHash: '0xd915642b6f3b5375c0096fd70eb15cc0676651fa7d588accd1c6002936bb19c2',
       deploymentManifestInputHash: '0xdb731ce141d9e731a17e60e47d1c0582c9c8684bf76430794d47d1d71fac6260',
       proxy: false,
     },
@@ -213,7 +213,7 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
       deployerArtifactPath: 'src/briefcase/deployers/universal-router/UniversalRouterDeployer.sol',
       sourceContractPath: 'src/pkgs/universal-router/contracts/UniversalRouter.sol',
       deploymentTransaction: '0xf07bb4c6eaccb5b7e128625b0c4fc6bc79f727f9b647a6e81a886bde905345b8',
-      sourceInitcodeHash: '0x8f564cfb262952d7d24e1750426672ccf3a72ca9268e2ec6d97cf846eaae179c',
+      generatedInitcodeHash: '0x8f564cfb262952d7d24e1750426672ccf3a72ca9268e2ec6d97cf846eaae179c',
       deploymentManifestInputHash: '0xe388b0b5ed9c81077f8fcd9a1724fb35b2c5792380dddd3a19fd02f5bc037f77',
       proxy: false,
     },
@@ -224,7 +224,7 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
     unsubscribeGasLimit: 300_000n,
   },
   limitations: [
-    'The exact Uniswap source-backed initcode and pinned Arc runtime are verified separately because constructor immutables change deployed runtime bytes.',
+    'The retained upstream generated initcode and pinned Arc runtime are verified separately because constructor immutables change deployed runtime bytes; this is not a fresh source compilation.',
     'The canonical Permit2 predeploy has an exact runtime pin but is not claimed as an Arc deployment produced by the retained Uniswap/contracts manifest.',
     'Argus Portal, hook, locker, splitter, tracker, fee, custody, and locked-principal semantics are not established by this shared deployment.',
     'The retained v4 Quoter is official infrastructure; hook-aware Argus execution must simulate the exact router call and sender rather than assuming Quoter equivalence.',

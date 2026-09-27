@@ -14,7 +14,7 @@
     "scripts/check-conformance.mjs",
     "scripts/verify-v3-deployments.mjs",
     "scripts/verify-v4-deployments.mjs",
-    "scripts/verify-v4-source-build.mjs",
+    "scripts/verify-v4-retained-artifacts.mjs",
     "README.md",
     "RELEASING.md",
     "NOTICE",

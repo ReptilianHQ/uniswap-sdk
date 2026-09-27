@@ -89,7 +89,8 @@ The direct-client RPC operations check chain identity (the `./batch` host owns t
 PoolManager pointer; quotes check the Quoter pointer at the observation block.
 `verifyV4DeploymentWiring` checks both pointers. This proves wiring only. Arc's stronger
 compatibility check pins the canonical block, exact runtime hashes, and immutable manager
-wiring; the separate source-build verifier reproduces the retained deployment artifacts.
+wiring; the separate retained-artifact verifier validates the official manifest and
+reproduces the generated deployment artifacts. It does not freshly compile Solidity.
 Hook-specific compatibility remains an adapter release gate.
 
 All state calls in an operation use one block number. Quote batches use up to
@@ -153,7 +154,7 @@ documented in [docs/FORK_TESTING.md](./docs/FORK_TESTING.md).
 `npm run test:live-compatibility` rechecks the two Robinhood deployments and the Arc v4
 deployment against their public RPCs. `UNISWAP_MAINNET_RPC_URL`,
 `UNISWAP_TESTNET_RPC_URL`, and `UNISWAP_ARC_RPC_URL` may override those read-only
-endpoints. Source reproduction is documented in
+endpoints. Retained-artifact reproduction is documented in
 [docs/ARC_V4_PROVENANCE.md](./docs/ARC_V4_PROVENANCE.md).
 
 Releases use the versioned Reptilian publisher, exact main-ancestry tags,

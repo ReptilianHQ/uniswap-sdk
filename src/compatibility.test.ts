@@ -69,19 +69,22 @@ const arcDeployment: ArcUniswapV4Deployment = {
   },
 };
 
-function arcClient(overrides: Record<string, unknown> = {}) {
+function arcClient(overrides: Record<string, unknown> = {}, wiring: readonly unknown[] = [
+  arcDeployment.contracts.poolManager,
+  arcDeployment.contracts.poolManager,
+  arcDeployment.contracts.poolManager,
+  arcDeployment.contracts.permit2,
+  arcDeployment.positionManagerWiring.wrappedNative,
+  arcDeployment.positionManagerWiring.tokenDescriptor,
+  arcDeployment.positionManagerWiring.unsubscribeGasLimit,
+]) {
+  const readContract = vi.fn();
+  for (const value of wiring) readContract.mockResolvedValueOnce(value);
   return {
     getChainId: vi.fn().mockResolvedValue(arcDeployment.chainId),
     getBlock: vi.fn().mockResolvedValue({ hash: arcDeployment.referenceBlock.hash }),
     getBytecode: vi.fn().mockResolvedValue(bytecode),
-    readContract: vi.fn()
-      .mockResolvedValueOnce(arcDeployment.contracts.poolManager)
-      .mockResolvedValueOnce(arcDeployment.contracts.poolManager)
-      .mockResolvedValueOnce(arcDeployment.contracts.poolManager)
-      .mockResolvedValueOnce(arcDeployment.contracts.permit2)
-      .mockResolvedValueOnce(arcDeployment.positionManagerWiring.wrappedNative)
-      .mockResolvedValueOnce(arcDeployment.positionManagerWiring.tokenDescriptor)
-      .mockResolvedValueOnce(arcDeployment.positionManagerWiring.unsubscribeGasLimit),
+    readContract,
     ...overrides,
   };
 }
@@ -101,6 +104,10 @@ describe('Arc Uniswap v4 compatibility', () => {
     expect(client.getBytecode).toHaveBeenCalledWith(expect.objectContaining({
       blockNumber: arcDeployment.referenceBlock.number,
     }));
+    expect(client.readContract).toHaveBeenCalledTimes(7);
+    for (const [request] of client.readContract.mock.calls) {
+      expect(request).toEqual(expect.objectContaining({ blockNumber: arcDeployment.referenceBlock.number }));
+    }
   });
 
   it('rejects a different canonical block before reading bytecode', async () => {
@@ -119,5 +126,34 @@ describe('Arc Uniswap v4 compatibility', () => {
       path: 'runtimeCodeHashes.poolManager',
     });
     expect(client.readContract).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['stateView.poolManager', 0, arcDeployment.contracts.permit2],
+    ['quoter.poolManager', 1, arcDeployment.contracts.permit2],
+    ['positionManager.poolManager', 2, arcDeployment.contracts.permit2],
+    ['positionManager.permit2', 3, arcDeployment.contracts.poolManager],
+    ['positionManager.WETH9', 4, arcDeployment.contracts.poolManager],
+    ['positionManager.tokenDescriptor', 5, arcDeployment.contracts.poolManager],
+    ['positionManager.unsubscribeGasLimit', 6, 1n],
+  ] as const)('rejects %s wiring drift at the pinned block', async (path, index, wrongValue) => {
+    const wiring: unknown[] = [
+      arcDeployment.contracts.poolManager,
+      arcDeployment.contracts.poolManager,
+      arcDeployment.contracts.poolManager,
+      arcDeployment.contracts.permit2,
+      arcDeployment.positionManagerWiring.wrappedNative,
+      arcDeployment.positionManagerWiring.tokenDescriptor,
+      arcDeployment.positionManagerWiring.unsubscribeGasLimit,
+    ];
+    wiring[index] = wrongValue;
+    const client = arcClient({}, wiring);
+    await expect(verifyArcUniswapV4Compatibility(client as never, arcDeployment)).rejects.toMatchObject({
+      code: 'DEPLOYMENT_MISMATCH',
+      path,
+    });
+    for (const [request] of client.readContract.mock.calls) {
+      expect(request).toEqual(expect.objectContaining({ blockNumber: arcDeployment.referenceBlock.number }));
+    }
   });
 });

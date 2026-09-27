@@ -66,9 +66,10 @@ archive-capable `SDK_FORK_EIP155_4663_RPC_URL`; it simulates and executes the
 reviewed close path on a pinned Anvil fork, then requires the collected receipt
 amounts to match the simulation. Run `npm run test:live-compatibility` before release to
 recheck all three deployment records. Runtime code identity is not source verification or
-custom-hook compatibility. Arc's shared Uniswap deployment is runtime-pinned and
-source-reproducible as documented in `docs/ARC_V4_PROVENANCE.md`; this does not
-establish Argus launcher semantics.
+custom-hook compatibility. Arc's shared Uniswap deployment is runtime-pinned and its
+official manifest plus retained generated artifacts are reproducible as documented in
+`docs/ARC_V4_PROVENANCE.md`; this is not a fresh source compilation and does not establish
+Argus launcher semantics.
 
 Set one exact version such as `<version>` in package.json and package-lock.json,
 land the source on main, then push its immutable tag `uniswap-sdk-v<version>`.

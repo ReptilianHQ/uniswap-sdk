@@ -44,7 +44,7 @@ describe('Arc Uniswap v4 deployment provenance', () => {
         deployerArtifactPath?: string;
         sourceContractPath?: string;
         deploymentTransaction?: string;
-        sourceInitcodeHash?: string;
+        generatedInitcodeHash?: string;
         deploymentManifestInputHash?: string;
         proxy?: boolean;
       }>;
@@ -63,14 +63,14 @@ describe('Arc Uniswap v4 deployment provenance', () => {
       expect(getAddress(record.contracts[name].address)).toBe(address);
       expect(record.contracts[name].runtimeCodeHash).toBe(arcUniswapV4Mainnet.runtimeCodeHashes[name as keyof typeof arcUniswapV4Mainnet.contracts]);
     }
-    for (const [name, artifact] of Object.entries(arcUniswapV4Mainnet.buildArtifacts)) {
+    for (const [name, artifact] of Object.entries(arcUniswapV4Mainnet.retainedArtifacts)) {
       expect(record.contracts[name]).toMatchObject({
         sourceCommit: artifact.sourceCommit,
         sourcePackageCommit: artifact.sourcePackageCommit,
         deployerArtifactPath: artifact.deployerArtifactPath,
         sourceContractPath: artifact.sourceContractPath,
         deploymentTransaction: artifact.deploymentTransaction,
-        sourceInitcodeHash: artifact.sourceInitcodeHash,
+        generatedInitcodeHash: artifact.generatedInitcodeHash,
         deploymentManifestInputHash: artifact.deploymentManifestInputHash,
         proxy: artifact.proxy,
       });

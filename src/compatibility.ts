@@ -79,7 +79,8 @@ export async function verifyUniswapV3Compatibility(
 
 /**
  * Rechecks the exact Arc block, runtime bytecode, and v4 immutable wiring.
- * Source-backed initcode is verified separately by verify-v4-source-build.mjs.
+ * Retained upstream generated initcode is verified separately by
+ * verify-v4-retained-artifacts.mjs; that check is not a fresh source compilation.
  */
 export async function verifyArcUniswapV4Compatibility(
   client: PublicClient,

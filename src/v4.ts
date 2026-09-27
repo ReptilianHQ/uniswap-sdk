@@ -13,13 +13,13 @@ export { buildV4MintPermitBatchTypedData } from './permit2.js';
 export type { V4PermitBatchDetailInput, V4PermitBatchTypedData } from './permit2.js';
 export { arcUniswapV4Mainnet, getArcUniswapV4Deployment } from './deployments.js';
 export type {
-  ArcUniswapV4BuildArtifact,
+  ArcUniswapV4ArtifactBackedContractName,
   ArcUniswapV4ContractName,
   ArcUniswapV4Contracts,
   ArcUniswapV4Deployment,
   ArcUniswapV4DeploymentId,
   ArcUniswapV4RuntimeCodeHashes,
-  ArcUniswapV4SourceBackedContractName,
+  ArcUniswapV4RetainedArtifact,
 } from './deployments.js';
 export { verifyArcUniswapV4Compatibility } from './compatibility.js';
 export type { ArcUniswapV4CompatibilityReport } from './compatibility.js';
