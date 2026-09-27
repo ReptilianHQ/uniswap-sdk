@@ -1,6 +1,7 @@
 import { getAddress, type Address, type Hex } from 'viem';
 import { V3_ABI_REVISION } from './v3-abis.js';
 import { UniswapSdkError } from './errors.js';
+import type { V4Deployment } from './pool.js';
 
 export type RobinhoodUniswapV3DeploymentId = 'robinhood-mainnet-v3' | 'robinhood-testnet-v3';
 
@@ -55,7 +56,7 @@ export interface ArcUniswapV4RetainedArtifact {
   proxy: false;
 }
 
-export interface ArcUniswapV4Deployment {
+export interface ArcUniswapV4Deployment extends V4Deployment {
   id: ArcUniswapV4DeploymentId;
   chainId: 5_042;
   network: 'arc-mainnet';
@@ -129,6 +130,14 @@ export const robinhoodUniswapV3Testnet: UniswapV3Deployment = deepFreeze({
 const uniswapContractsRepository = 'https://github.com/Uniswap/contracts' as const;
 const arcV4SourceCommit = '534603a5bc10d41d57a1c9c34417d472f0dbc0d3';
 const arcUniversalRouterSourceCommit = '02fd1760fa7c05096833c03e01a4143f963c350e';
+const arcV4Contracts: ArcUniswapV4Contracts = {
+  poolManager: getAddress('0x8366a39CC670B4001A1121B8F6A443A643e40951'),
+  stateView: getAddress('0xF3334192D15450CdD385c8B70e03f9A6bD9E673b'),
+  positionManager: getAddress('0x6049c9a0e26405C0985f9E3685C87d0aE917f82B'),
+  quoter: getAddress('0x8dc178efb8111bb0973dd9d722ebeff267c98f94'),
+  universalRouter: getAddress('0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1'),
+  permit2: getAddress('0x000000000022D473030F116dDEE9F6B43aC78BA3'),
+};
 
 /**
  * Official Uniswap v4 infrastructure used by the reviewed Argus Arc flow.
@@ -140,19 +149,15 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
   id: 'arc-mainnet-v4',
   chainId: 5_042,
   network: 'arc-mainnet',
+  poolManager: arcV4Contracts.poolManager,
+  stateView: arcV4Contracts.stateView,
+  quoter: arcV4Contracts.quoter,
   reviewedAt: '2026-09-27',
   referenceBlock: {
     number: 20_889_496n,
     hash: '0xf3fd31df5afb9d37a216dda53ac751a6a6c08a9c7e96ce4c07fb0df18d40810b',
   },
-  contracts: {
-    poolManager: getAddress('0x8366a39CC670B4001A1121B8F6A443A643e40951'),
-    stateView: getAddress('0xF3334192D15450CdD385c8B70e03f9A6bD9E673b'),
-    positionManager: getAddress('0x6049c9a0e26405C0985f9E3685C87d0aE917f82B'),
-    quoter: getAddress('0x8dc178efb8111bb0973dd9d722ebeff267c98f94'),
-    universalRouter: getAddress('0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1'),
-    permit2: getAddress('0x000000000022D473030F116dDEE9F6B43aC78BA3'),
-  },
+  contracts: arcV4Contracts,
   runtimeCodeHashes: {
     poolManager: '0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626',
     stateView: '0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6',

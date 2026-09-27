@@ -82,5 +82,10 @@ describe('Arc Uniswap v4 deployment provenance', () => {
       tokenDescriptor: arcUniswapV4Mainnet.positionManagerWiring.tokenDescriptor,
       unsubscribeGasLimit: arcUniswapV4Mainnet.positionManagerWiring.unsubscribeGasLimit.toString(),
     });
+    expect(arcUniswapV4Mainnet).toMatchObject({
+      poolManager: arcUniswapV4Mainnet.contracts.poolManager,
+      stateView: arcUniswapV4Mainnet.contracts.stateView,
+      quoter: arcUniswapV4Mainnet.contracts.quoter,
+    });
   });
 });
