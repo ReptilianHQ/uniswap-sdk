@@ -87,6 +87,12 @@ export async function verifyArcUniswapV4Compatibility(
   deployment: ArcUniswapV4Deployment,
 ): Promise<ArcUniswapV4CompatibilityReport> {
   return rpc(async () => {
+    for (const name of ['poolManager', 'stateView', 'quoter'] as const) {
+      if (deployment[name].toLowerCase() !== deployment.contracts[name].toLowerCase()) {
+        mismatch(name, deployment.contracts[name], deployment[name]);
+      }
+    }
+
     const chainId = await client.getChainId();
     if (chainId !== deployment.chainId) mismatch('chainId', deployment.chainId, chainId);
 

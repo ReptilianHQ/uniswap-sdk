@@ -90,6 +90,23 @@ function arcClient(overrides: Record<string, unknown> = {}, wiring: readonly unk
 }
 
 describe('Arc Uniswap v4 compatibility', () => {
+  it.each([
+    ['poolManager', arcDeployment.contracts.permit2],
+    ['stateView', arcDeployment.contracts.permit2],
+    ['quoter', arcDeployment.contracts.permit2],
+  ] as const)('rejects top-level %s drift before making RPC calls', async (name, wrongValue) => {
+    const client = arcClient();
+    const deployment = { ...arcDeployment, [name]: wrongValue };
+    await expect(verifyArcUniswapV4Compatibility(client as never, deployment)).rejects.toMatchObject({
+      code: 'DEPLOYMENT_MISMATCH',
+      path: name,
+    });
+    expect(client.getChainId).not.toHaveBeenCalled();
+    expect(client.getBlock).not.toHaveBeenCalled();
+    expect(client.getBytecode).not.toHaveBeenCalled();
+    expect(client.readContract).not.toHaveBeenCalled();
+  });
+
   it('checks the pinned block, runtime code hashes, and immutable wiring', async () => {
     const client = arcClient();
     const report = await verifyArcUniswapV4Compatibility(client as never, arcDeployment);
