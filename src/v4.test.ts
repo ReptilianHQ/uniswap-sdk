@@ -3,7 +3,7 @@ import { Ether, Token } from '@uniswap/sdk-core';
 import { Pool } from '@uniswap/v4-sdk';
 import { createPublicClient, custom, decodeFunctionData, encodeAbiParameters, encodeFunctionResult, encodeEventTopics, zeroAddress, type Address, type Hex } from 'viem';
 import { v4PoolManagerAbi, v4QuoterAbi, v4StateViewAbi } from './abis.js';
-import { decodeV4PoolInitialization, getV4PoolId, poolKeyFromCurrencies, poolReference, quoteV4Batch, quoteV4ExactInput, readV4Pool, readV4TickWindow, ticksInWord, verifyV4DeploymentWiring, type V4Deployment, type V4PoolKey } from './v4.js';
+import { arcUniswapV4Mainnet, decodeV4PoolInitialization, getV4PoolId, poolKeyFromCurrencies, poolReference, quoteV4Batch, quoteV4ExactInput, readV4Pool, readV4TickWindow, ticksInWord, verifyV4DeploymentWiring, type V4Deployment, type V4PoolKey } from './v4.js';
 import { isUniswapSdkError } from './errors.js';
 
 const token: Address = '0x0000000000000000000000000000000000000010';
@@ -44,6 +44,13 @@ function fixture(options: { chainId?: number; manager?: Address; failAmount?: bi
 }
 
 describe('v4 pool identity', () => {
+  it('uses the reviewed Arc deployment directly in generic v4 consumers', () => {
+    expect(poolReference(arcUniswapV4Mainnet, key)).toMatchObject({
+      chainId: 5_042,
+      poolManager: arcUniswapV4Mainnet.contracts.poolManager,
+    });
+  });
+
   it('matches the official SDK for native and ERC20 pairs across chains and fee modes', () => {
     for (const chainId of [1, 4663, 777777]) {
       for (const currency0 of [zeroAddress, token]) {

@@ -11,3 +11,15 @@ export { buildV4MintPositionTransaction, reviewV4MintPositionCalldata } from './
 export type { V4BatchPermit, V4BatchPermitDetail, V4ExpectedMint, V4MintActionParams, V4MintPositionParams, V4PoolKeyMaterial, V4PoolState, V4TransactionMaterial } from './v4-transactions.js';
 export { buildV4MintPermitBatchTypedData } from './permit2.js';
 export type { V4PermitBatchDetailInput, V4PermitBatchTypedData } from './permit2.js';
+export { arcUniswapV4Mainnet, getArcUniswapV4Deployment } from './deployments.js';
+export type {
+  ArcUniswapV4ArtifactBackedContractName,
+  ArcUniswapV4ContractName,
+  ArcUniswapV4Contracts,
+  ArcUniswapV4Deployment,
+  ArcUniswapV4DeploymentId,
+  ArcUniswapV4RuntimeCodeHashes,
+  ArcUniswapV4RetainedArtifact,
+} from './deployments.js';
+export { verifyArcUniswapV4Compatibility } from './compatibility.js';
+export type { ArcUniswapV4CompatibilityReport } from './compatibility.js';
