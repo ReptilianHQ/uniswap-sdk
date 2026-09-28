@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { Ether, Token } from '@uniswap/sdk-core';
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, parseAbiParameters, zeroAddress, type Address, type Hex } from 'viem';
 import { v4PositionManagerAbi } from './abis.js';
-import { buildV4MintPositionTransaction, reviewV4MintPositionCalldata, type V4PoolState } from './v4-transactions.js';
+import {
+  buildV4MintPositionTransaction,
+  buildV4IncreasePositionTransaction,
+  buildV4RemovePositionTransaction,
+  reviewV4IncreasePositionCalldata,
+  reviewV4MintPositionCalldata,
+  reviewV4RemovePositionCalldata,
+  type V4PoolState,
+} from './v4-transactions.js';
 import { isUniswapSdkError } from './errors.js';
 
 /** Hand-encodes a `modifyLiquidities` call for a crafted action sequence, bypassing
@@ -21,6 +29,10 @@ const mintPositionParamTypes = parseAbiParameters(
 );
 const settlePairParamTypes = parseAbiParameters('address currency0, address currency1');
 const sweepParamTypes = parseAbiParameters('address currency, address to');
+const decreaseLiquidityParamTypes = parseAbiParameters(
+  'uint256 tokenId, uint256 liquidity, uint128 amount0Min, uint128 amount1Min, bytes hookData',
+);
+const takePairParamTypes = parseAbiParameters('address currency0, address currency1, address recipient');
 
 const positionManager: Address = '0x0000000000000000000000000000000000000900';
 const hooks: Address = '0x0000000000000000000000000000000000002044';
@@ -341,5 +353,192 @@ describe('v4 mint with a Permit2 batch approval', () => {
       batchPermit: { owner: recipient, spender: positionManager, sigDeadline: baseParams.deadlineSeconds, details: [detailA, detailB] },
     };
     expect(() => reviewV4MintPositionCalldata(forged, expected)).toThrow(/lists the same token more than once/);
+  });
+});
+
+describe('v4 position removal', () => {
+  const removePool = { ...pool, liquidity: 5_000_000n };
+  const removeParams = {
+    positionManager,
+    pool: removePool,
+    tokenId: 42n,
+    tickLower: -60,
+    tickUpper: 60,
+    liquidity: 1_000_000n,
+    liquidityToRemove: 250_000n,
+    slippageToleranceBps: 50,
+    deadlineSeconds: 9_999_999_999n,
+    hookData: '0x1234' as Hex,
+    modelledHookPermissions,
+  };
+  const expected = {
+    currency0: token.address as Address,
+    currency1: other.address as Address,
+    fee: pool.fee,
+    tickSpacing: pool.tickSpacing,
+    hooks,
+    tokenId: 42n,
+    liquidityToRemove: 250_000n,
+    burnToken: false,
+    modelledHookPermissions,
+  };
+
+  it('builds and reviews an exact partial decrease followed by TAKE_PAIR to msgSender', () => {
+    const material = buildV4RemovePositionTransaction(removeParams);
+    expect(material.to.toLowerCase()).toBe(positionManager.toLowerCase());
+    expect(material.value).toBe(0n);
+    const reviewed = reviewV4RemovePositionCalldata(material.data, expected);
+    expect(reviewed).toMatchObject({
+      tokenId: 42n,
+      liquidityRemoved: 250_000n,
+      hookData: '0x1234',
+      burned: false,
+      deadline: removeParams.deadlineSeconds,
+    });
+    expect(reviewed.currency0.toLowerCase()).toBe(token.address.toLowerCase());
+    expect(reviewed.currency1.toLowerCase()).toBe(other.address.toLowerCase());
+    expect(reviewed.recipient).toBe('0x0000000000000000000000000000000000000001');
+  });
+
+  it('builds and reviews a full exit that burns the NFT', () => {
+    const full = {
+      ...removeParams,
+      liquidityToRemove: removeParams.liquidity,
+      burnToken: true,
+    };
+    const material = buildV4RemovePositionTransaction(full);
+    expect(reviewV4RemovePositionCalldata(material.data, {
+      ...expected,
+      liquidityToRemove: full.liquidity,
+      burnToken: true,
+    })).toMatchObject({ tokenId: 42n, liquidityRemoved: full.liquidity, burned: true });
+  });
+
+  it('rejects invalid removal quantities, partial burns, and unreviewed hooks', () => {
+    for (const candidate of [
+      { ...removeParams, liquidityToRemove: 0n },
+      { ...removeParams, liquidityToRemove: removeParams.liquidity + 1n },
+      { ...removeParams, burnToken: true },
+      { ...removeParams, slippageToleranceBps: 10_001 },
+      { ...removeParams, modelledHookPermissions: undefined },
+      { ...removeParams, modelledHookPermissions: ['beforeInitialize'] as const },
+    ]) {
+      expect(() => buildV4RemovePositionTransaction(candidate)).toThrow();
+    }
+  });
+
+  it('rejects altered token IDs, liquidity, currency pairs, recipients, burn behavior, and extra actions', () => {
+    const material = buildV4RemovePositionTransaction(removeParams);
+    expect(() => reviewV4RemovePositionCalldata(material.data, { ...expected, tokenId: 43n })).toThrow(/different position/);
+    expect(() => reviewV4RemovePositionCalldata(material.data, { ...expected, liquidityToRemove: 249_999n })).toThrow(/different liquidity/);
+    expect(() => reviewV4RemovePositionCalldata(material.data, { ...expected, currency1: recipient })).toThrow(/different currency pair/);
+    expect(() => reviewV4RemovePositionCalldata(material.data, { ...expected, burnToken: true })).toThrow(/burn behavior/);
+
+    const decrease = encodeAbiParameters(decreaseLiquidityParamTypes, [42n, 250_000n, 1n, 1n, '0x1234']);
+    const redirectedTake = encodeAbiParameters(takePairParamTypes, [token.address as Address, other.address as Address, recipient]);
+    const redirected = encodeRawActions([{ id: 1, params: decrease }, { id: 17, params: redirectedTake }], removeParams.deadlineSeconds);
+    expect(() => reviewV4RemovePositionCalldata(redirected, expected)).toThrow(/unexpected recipient/);
+
+    const properTake = encodeAbiParameters(takePairParamTypes, [token.address as Address, other.address as Address, '0x0000000000000000000000000000000000000001']);
+    const extra = encodeRawActions(
+      [{ id: 1, params: decrease }, { id: 17, params: properTake }, { id: 17, params: properTake }],
+      removeParams.deadlineSeconds,
+    );
+    expect(() => reviewV4RemovePositionCalldata(extra, expected)).toThrow(/exactly one liquidity action/);
+  });
+
+  it('accepts unhooked removals without a permission declaration', () => {
+    const unhookedPool = { ...removePool, hooks: zeroAddress };
+    const material = buildV4RemovePositionTransaction({
+      ...removeParams,
+      pool: unhookedPool,
+      modelledHookPermissions: undefined,
+      hookData: '0x',
+    });
+    expect(reviewV4RemovePositionCalldata(material.data, {
+      ...expected,
+      hooks: zeroAddress,
+      modelledHookPermissions: undefined,
+    }).liquidityRemoved).toBe(removeParams.liquidityToRemove);
+  });
+});
+
+describe('v4 position increase', () => {
+  const batchPermit = {
+    owner: recipient,
+    permitBatch: {
+      details: [
+        { token: token.address as Address, amount: 500_000n, expiration: 9_999_999_999n, nonce: 0n },
+        { token: other.address as Address, amount: 600_000n, expiration: 9_999_999_999n, nonce: 1n },
+      ],
+      spender: positionManager,
+      sigDeadline: 9_999_999_999n,
+    },
+    signature: '0x1234' as Hex,
+  };
+  const increaseParams = {
+    positionManager,
+    pool: { ...pool, liquidity: 5_000_000n },
+    tokenId: 42n,
+    tickLower: -60,
+    tickUpper: 60,
+    liquidityToAdd: 250_000n,
+    slippageToleranceBps: 50,
+    deadlineSeconds: 9_999_999_999n,
+    hookData: '0x1234' as Hex,
+    batchPermit,
+    modelledHookPermissions,
+  };
+  const expected = {
+    currency0: token.address as Address,
+    currency1: other.address as Address,
+    fee: pool.fee,
+    tickSpacing: pool.tickSpacing,
+    hooks,
+    tokenId: 42n,
+    modelledHookPermissions,
+    batchPermit: {
+      owner: batchPermit.owner,
+      spender: batchPermit.permitBatch.spender,
+      sigDeadline: batchPermit.permitBatch.sigDeadline,
+      details: batchPermit.permitBatch.details,
+    },
+  };
+
+  it('builds and reviews an exact increase with its Permit2 batch', () => {
+    const material = buildV4IncreasePositionTransaction(increaseParams);
+    expect(material.to.toLowerCase()).toBe(positionManager.toLowerCase());
+    expect(material.value).toBe(0n);
+    expect(reviewV4IncreasePositionCalldata(material.data, expected)).toMatchObject({
+      tokenId: 42n,
+      liquidityAdded: 250_000n,
+      hookData: '0x1234',
+      batchPermitOwner: recipient,
+      deadline: increaseParams.deadlineSeconds,
+    });
+  });
+
+  it('rejects changed position identity, pair, permit, and unreviewed hooks', () => {
+    const material = buildV4IncreasePositionTransaction(increaseParams);
+    expect(() => reviewV4IncreasePositionCalldata(material.data, { ...expected, tokenId: 43n })).toThrow(/different position/);
+    expect(() => reviewV4IncreasePositionCalldata(material.data, { ...expected, currency1: recipient })).toThrow(/different currency pair/);
+    expect(() => reviewV4IncreasePositionCalldata(material.data, { ...expected, batchPermit: undefined })).toThrow(/no expected approval/);
+    expect(() => buildV4IncreasePositionTransaction({ ...increaseParams, liquidityToAdd: 0n })).toThrow();
+    expect(() => buildV4IncreasePositionTransaction({ ...increaseParams, modelledHookPermissions: undefined })).toThrow();
+  });
+
+  it('supports an unhooked increase without hook permissions or hook data', () => {
+    const unhooked = {
+      ...increaseParams,
+      pool: { ...increaseParams.pool, hooks: zeroAddress },
+      modelledHookPermissions: undefined,
+      hookData: '0x' as Hex,
+    };
+    const material = buildV4IncreasePositionTransaction(unhooked);
+    expect(reviewV4IncreasePositionCalldata(material.data, {
+      ...expected,
+      hooks: zeroAddress,
+      modelledHookPermissions: undefined,
+    }).liquidityAdded).toBe(increaseParams.liquidityToAdd);
   });
 });

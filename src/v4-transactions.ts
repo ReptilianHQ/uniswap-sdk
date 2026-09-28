@@ -46,6 +46,42 @@ export type V4MintPositionParams = {
   modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
 };
 
+export type V4RemovePositionParams = {
+  positionManager: Address;
+  pool: V4PoolState;
+  tokenId: bigint;
+  tickLower: number;
+  tickUpper: number;
+  /** Current on-chain position liquidity at the reviewed observation block. */
+  liquidity: bigint;
+  /** Exact liquidity units to remove. */
+  liquidityToRemove: bigint;
+  /** Burns the position NFT after removing all liquidity. */
+  burnToken?: boolean;
+  /** Integer basis points, 0-10000. */
+  slippageToleranceBps: number;
+  deadlineSeconds: bigint;
+  /** Passed to the hook's callbacks verbatim; this SDK does not construct it. */
+  hookData?: Hex;
+  /** Permission flags reviewed for a nonzero pool hook. */
+  modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
+};
+
+export type V4IncreasePositionParams = {
+  positionManager: Address;
+  pool: V4PoolState;
+  tokenId: bigint;
+  tickLower: number;
+  tickUpper: number;
+  /** Exact liquidity units to add to the existing position. */
+  liquidityToAdd: bigint;
+  slippageToleranceBps: number;
+  deadlineSeconds: bigint;
+  hookData?: Hex;
+  batchPermit?: V4BatchPermit;
+  modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
+};
+
 function slippagePercent(bps: number): Percent {
   if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) {
     invalid('slippageToleranceBps must be an integer between 0 and 10000');
@@ -168,8 +204,158 @@ export function buildV4MintPositionTransaction(input: V4MintPositionParams): V4T
   }
 }
 
+/**
+ * Builds unsigned calldata that removes exact liquidity units from one V4 position and
+ * returns both currencies to PositionManager's `msgSender()`. Full exits may atomically
+ * burn the NFT. The caller must independently bind the token ID to the supplied PoolKey,
+ * ticks, liquidity and owner at the same observation block; V4 removal calldata contains
+ * a token ID rather than the complete PoolKey.
+ */
+export function buildV4RemovePositionTransaction(input: V4RemovePositionParams): V4TransactionMaterial {
+  if (input.tokenId < 0n) invalid('Position token ID must be non-negative');
+  if (input.liquidity <= 0n) invalid('Current position liquidity must be positive');
+  if (input.liquidityToRemove <= 0n || input.liquidityToRemove > input.liquidity) {
+    invalid('Liquidity to remove must be positive and no greater than current position liquidity');
+  }
+  if (!Number.isInteger(input.tickLower) || !Number.isInteger(input.tickUpper) || input.tickLower >= input.tickUpper) {
+    invalid('tickLower must be an integer less than tickUpper');
+  }
+  if (input.burnToken && input.liquidityToRemove !== input.liquidity) {
+    invalid('burnToken requires removing all current position liquidity');
+  }
+  const positionManager = checkedAddress(input.positionManager);
+  const hooks = checkedAddress(input.pool.hooks);
+  if (!same(hooks, zeroAddress)) {
+    if (!input.modelledHookPermissions) {
+      invalid('pool.hooks is set but no modelledHookPermissions were supplied to verify it');
+    }
+    const unmodelled = unmodelledV4HookPermissions(hooks, input.modelledHookPermissions);
+    if (unmodelled.length) invalid(`Pool hook implements unmodelled permissions: ${unmodelled.join(', ')}`);
+  }
+
+  try {
+    const pool = new Pool(
+      input.pool.currency0,
+      input.pool.currency1,
+      input.pool.fee,
+      input.pool.tickSpacing,
+      hooks,
+      input.pool.sqrtPriceX96.toString(),
+      input.pool.liquidity.toString(),
+      input.pool.tickCurrent,
+    );
+    const position = new Position({
+      pool,
+      liquidity: input.liquidity.toString(),
+      tickLower: input.tickLower,
+      tickUpper: input.tickUpper,
+    });
+    const params = V4PositionManager.removeCallParameters(position, {
+      tokenId: input.tokenId.toString(),
+      liquidityPercentage: new Percent(input.liquidityToRemove.toString(), input.liquidity.toString()),
+      burnToken: input.burnToken ?? false,
+      slippageTolerance: slippagePercent(input.slippageToleranceBps),
+      hookData: input.hookData,
+      deadline: input.deadlineSeconds.toString(),
+    });
+    return { to: positionManager, data: params.calldata as Hex, value: BigInt(params.value) };
+  } catch (cause) {
+    if (cause instanceof UniswapSdkError) throw cause;
+    throw new UniswapSdkError('INVALID_ARGUMENT', 'Official Uniswap SDK rejected the removal parameters', { cause });
+  }
+}
+
+/** Builds unsigned calldata that increases one existing V4 position. */
+export function buildV4IncreasePositionTransaction(input: V4IncreasePositionParams): V4TransactionMaterial {
+  if (input.tokenId < 0n) invalid('Position token ID must be non-negative');
+  if (input.liquidityToAdd <= 0n) invalid('Liquidity to add must be positive');
+  if (!Number.isInteger(input.tickLower) || !Number.isInteger(input.tickUpper) || input.tickLower >= input.tickUpper) {
+    invalid('tickLower must be an integer less than tickUpper');
+  }
+  const positionManager = checkedAddress(input.positionManager);
+  const hooks = checkedAddress(input.pool.hooks);
+  if (!same(hooks, zeroAddress)) {
+    if (!input.modelledHookPermissions) invalid('pool.hooks is set but no modelledHookPermissions were supplied to verify it');
+    const unmodelled = unmodelledV4HookPermissions(hooks, input.modelledHookPermissions);
+    if (unmodelled.length) invalid(`Pool hook implements unmodelled permissions: ${unmodelled.join(', ')}`);
+  }
+  if (input.batchPermit) validateBatchPermit(input.batchPermit, positionManager, input.pool);
+
+  try {
+    const pool = new Pool(
+      input.pool.currency0,
+      input.pool.currency1,
+      input.pool.fee,
+      input.pool.tickSpacing,
+      hooks,
+      input.pool.sqrtPriceX96.toString(),
+      input.pool.liquidity.toString(),
+      input.pool.tickCurrent,
+    );
+    const position = new Position({
+      pool,
+      liquidity: input.liquidityToAdd.toString(),
+      tickLower: input.tickLower,
+      tickUpper: input.tickUpper,
+    });
+    const params = V4PositionManager.addCallParameters(position, {
+      tokenId: input.tokenId.toString(),
+      useNative: pool.currency0.isNative ? pool.currency0 : undefined,
+      slippageTolerance: slippagePercent(input.slippageToleranceBps),
+      hookData: input.hookData,
+      deadline: input.deadlineSeconds.toString(),
+      ...(input.batchPermit ? { batchPermit: serializableBatchPermit(input.batchPermit) } : {}),
+    });
+    return { to: positionManager, data: params.calldata as Hex, value: BigInt(params.value) };
+  } catch (cause) {
+    if (cause instanceof UniswapSdkError) throw cause;
+    throw new UniswapSdkError('INVALID_ARGUMENT', 'Official Uniswap SDK rejected the increase parameters', { cause });
+  }
+}
+
+function validateBatchPermit(batchPermit: V4BatchPermit, positionManager: Address, pool: V4PoolState): void {
+  if (!same(batchPermit.permitBatch.spender, positionManager)) {
+    invalid('batchPermit.permitBatch.spender must be the position manager this transaction submits to');
+  }
+  if (!batchPermit.permitBatch.details.length) invalid('batchPermit.permitBatch.details must include at least one token');
+  const poolTokens = [pool.currency0, pool.currency1]
+    .filter(currency => !currency.isNative)
+    .map(currency => checkedAddress(currency.wrapped.address as Address));
+  const seen = new Set<string>();
+  for (const detail of batchPermit.permitBatch.details) {
+    const token = checkedAddress(detail.token);
+    if (!poolTokens.some(poolToken => same(poolToken, token))) {
+      invalid('batchPermit.permitBatch.details references a token that is not part of this position pool');
+    }
+    if (seen.has(token.toLowerCase())) invalid('batchPermit.permitBatch.details lists the same token more than once');
+    seen.add(token.toLowerCase());
+  }
+}
+
+function serializableBatchPermit(batchPermit: V4BatchPermit) {
+  return {
+    owner: checkedAddress(batchPermit.owner),
+    permitBatch: {
+      details: batchPermit.permitBatch.details.map(detail => ({
+        token: checkedAddress(detail.token),
+        amount: detail.amount.toString(),
+        expiration: detail.expiration.toString(),
+        nonce: detail.nonce.toString(),
+      })),
+      spender: checkedAddress(batchPermit.permitBatch.spender),
+      sigDeadline: batchPermit.permitBatch.sigDeadline.toString(),
+    },
+    signature: batchPermit.signature,
+  };
+}
+
 const MINT_POSITION_ACTION = 2;
+const INCREASE_LIQUIDITY_ACTION = 0;
+const DECREASE_LIQUIDITY_ACTION = 1;
+const BURN_POSITION_ACTION = 3;
 const SETTLE_PAIR_ACTION = 13;
+const TAKE_PAIR_ACTION = 17;
+const CLOSE_CURRENCY_ACTION = 18;
 const SWEEP_ACTION = 20;
 /** PositionManager's `msgSender()` sentinel; the only address `SWEEP` may refund to. */
 const MSG_SENDER: Address = '0x0000000000000000000000000000000000000001';
@@ -179,8 +365,19 @@ const poolKeyStruct = '(address currency0, address currency1, uint24 fee, int24 
 const mintPositionParams = parseAbiParameters(
   `${poolKeyStruct} poolKey, int24 tickLower, int24 tickUpper, uint256 liquidity, uint128 amount0Max, uint128 amount1Max, address owner, bytes hookData`,
 );
+const increaseLiquidityParams = parseAbiParameters(
+  'uint256 tokenId, uint256 liquidity, uint128 amount0Max, uint128 amount1Max, bytes hookData',
+);
 const settlePairParams = parseAbiParameters('address currency0, address currency1');
 const sweepParams = parseAbiParameters('address currency, address to');
+const decreaseLiquidityParams = parseAbiParameters(
+  'uint256 tokenId, uint256 liquidity, uint128 amount0Min, uint128 amount1Min, bytes hookData',
+);
+const burnPositionParams = parseAbiParameters(
+  'uint256 tokenId, uint128 amount0Min, uint128 amount1Min, bytes hookData',
+);
+const takePairParams = parseAbiParameters('address currency0, address currency1, address recipient');
+const closeCurrencyParams = parseAbiParameters('address currency');
 
 export type V4PoolKeyMaterial = { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address };
 export type V4MintActionParams = {
@@ -259,6 +456,233 @@ export type V4ExpectedMint = V4PoolKeyMaterial & {
    */
   modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
 };
+
+export type V4ExpectedRemoval = V4PoolKeyMaterial & {
+  tokenId: bigint;
+  /** Exact liquidity units reviewed for removal. Required for partial exits. */
+  liquidityToRemove: bigint;
+  burnToken: boolean;
+  modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
+};
+
+export type V4ExpectedIncrease = V4PoolKeyMaterial & {
+  tokenId: bigint;
+  batchPermit?: { owner: Address; spender: Address; sigDeadline: bigint; details: readonly V4BatchPermitDetail[] };
+  modelledHookPermissions?: readonly (keyof V4HookPermissions)[];
+};
+
+export type V4IncreaseActionParams = {
+  tokenId: bigint;
+  liquidityAdded: bigint;
+  amount0Max: bigint;
+  amount1Max: bigint;
+  hookData: Hex;
+  currency0: Address;
+  currency1: Address;
+  deadline: bigint;
+  batchPermitOwner?: Address;
+};
+
+/** Reviews the exact increase/settlement shape emitted by the corresponding builder. */
+export function reviewV4IncreasePositionCalldata(data: Hex, expected: V4ExpectedIncrease): V4IncreaseActionParams {
+  try {
+    const decoded = decodeFunctionData({ abi: v4PositionManagerAbi, data });
+    let unlockData: Hex;
+    let deadline: bigint;
+    let batchPermit: { owner: Address; spender: Address; sigDeadline: bigint; details: readonly V4BatchPermitDetail[] } | undefined;
+    if (decoded.functionName === 'multicall') {
+      const calls = decoded.args[0].map(call => decodeFunctionData({ abi: v4PositionManagerAbi, data: call }));
+      if (calls.length < 1 || calls.length > 2) mismatch('Increase calldata multicall has an unexpected call count');
+      const increaseCall = calls.at(-1)!;
+      if (increaseCall.functionName !== 'modifyLiquidities') mismatch('Increase calldata multicall must end with modifyLiquidities');
+      if (calls.length === 2) {
+        const permitCall = calls[0]!;
+        if (permitCall.functionName !== 'permitBatch') mismatch('Increase calldata contains an unreviewed call before modifyLiquidities');
+        const [owner, permit] = permitCall.args as readonly [Address, { details: readonly { token: Address; amount: bigint; expiration: number; nonce: number }[]; spender: Address; sigDeadline: bigint }, Hex];
+        batchPermit = {
+          owner,
+          spender: permit.spender,
+          sigDeadline: permit.sigDeadline,
+          details: permit.details.map(detail => ({ token: detail.token, amount: detail.amount, expiration: BigInt(detail.expiration), nonce: BigInt(detail.nonce) })),
+        };
+      }
+      [unlockData, deadline] = increaseCall.args as [Hex, bigint];
+    } else if (decoded.functionName === 'modifyLiquidities') {
+      [unlockData, deadline] = decoded.args;
+    } else {
+      return mismatch('Increase calldata is not a position-manager modifyLiquidities call');
+    }
+
+    const [actionsBytes, actionParams] = decodeAbiParameters(unlockDataParams, unlockData) as [Hex, readonly Hex[]];
+    const actionIds = decodeActionIds(actionsBytes);
+    if (actionIds.length < 3 || actionIds.length > 4 || actionIds.length !== actionParams.length) {
+      mismatch('Increase calldata has an unexpected action count');
+    }
+    if (actionIds[0] !== INCREASE_LIQUIDITY_ACTION) mismatch('Increase calldata must begin with INCREASE_LIQUIDITY');
+    const [tokenId, liquidityAdded, amount0Max, amount1Max, hookData] = decodeAbiParameters(
+      increaseLiquidityParams,
+      actionParams[0]!,
+    ) as [bigint, bigint, bigint, bigint, Hex];
+    if (tokenId !== expected.tokenId) mismatch('Increase calldata targets a different position token ID');
+    if (liquidityAdded <= 0n) mismatch('Increase calldata adds non-positive liquidity');
+    if (actionIds[1] !== CLOSE_CURRENCY_ACTION || actionIds[2] !== CLOSE_CURRENCY_ACTION) {
+      mismatch('INCREASE_LIQUIDITY must be followed by CLOSE_CURRENCY for both pool currencies');
+    }
+    const [currency0] = decodeAbiParameters(closeCurrencyParams, actionParams[1]!) as [Address];
+    const [currency1] = decodeAbiParameters(closeCurrencyParams, actionParams[2]!) as [Address];
+    if (!same(currency0, expected.currency0) || !same(currency1, expected.currency1)) {
+      mismatch('CLOSE_CURRENCY actions target a different currency pair than expected');
+    }
+    if (actionIds.length === 4) {
+      if (actionIds[3] !== SWEEP_ACTION) mismatch('Increase calldata has an unreviewed action after CLOSE_CURRENCY');
+      const [sweepCurrency, sweepTo] = decodeAbiParameters(sweepParams, actionParams[3]!) as [Address, Address];
+      if (!same(sweepCurrency, zeroAddress) && !same(sweepCurrency, expected.currency0)) mismatch('SWEEP refunds an unexpected currency');
+      if (!same(sweepTo, MSG_SENDER)) mismatch('SWEEP sends the refund to an unexpected recipient');
+    }
+    if (!same(expected.hooks, zeroAddress)) {
+      if (!expected.modelledHookPermissions) mismatch('Increase targets a pool with a hook but no modelled permissions were supplied');
+      const unmodelled = unmodelledV4HookPermissions(expected.hooks, expected.modelledHookPermissions);
+      if (unmodelled.length) mismatch(`Increase pool hook implements unmodelled permissions: ${unmodelled.join(', ')}`);
+    }
+    if (batchPermit) {
+      if (!expected.batchPermit) mismatch('Increase calldata includes a Permit2 batch approval but no expected approval was supplied');
+      const poolTokens = [expected.currency0, expected.currency1];
+      const seen = new Set<string>();
+      for (const detail of batchPermit.details) {
+        if (same(detail.token, zeroAddress) || !poolTokens.some(token => same(token, detail.token))) {
+          mismatch('Permit2 batch approval references a token outside the position pool');
+        }
+        if (seen.has(detail.token.toLowerCase())) mismatch('Permit2 batch approval lists the same token more than once');
+        seen.add(detail.token.toLowerCase());
+      }
+      if (!same(batchPermit.owner, expected.batchPermit.owner)
+        || !same(batchPermit.spender, expected.batchPermit.spender)
+        || batchPermit.sigDeadline !== expected.batchPermit.sigDeadline
+        || !sameBatchPermitDetails(batchPermit.details, expected.batchPermit.details)) {
+        mismatch('Increase Permit2 batch approval does not match what was expected');
+      }
+    }
+    return {
+      tokenId,
+      liquidityAdded,
+      amount0Max,
+      amount1Max,
+      hookData,
+      currency0,
+      currency1,
+      deadline,
+      ...(batchPermit ? { batchPermitOwner: batchPermit.owner } : {}),
+    };
+  } catch (error) {
+    if (error instanceof UniswapSdkError) throw error;
+    throw new UniswapSdkError('CALLDATA_MISMATCH', 'Increase calldata contains undecodable position-manager calls', { cause: error });
+  }
+}
+
+export type V4RemoveActionParams = {
+  tokenId: bigint;
+  liquidityRemoved: bigint;
+  amount0Min: bigint;
+  amount1Min: bigint;
+  hookData: Hex;
+  currency0: Address;
+  currency1: Address;
+  recipient: Address;
+  deadline: bigint;
+  burned: boolean;
+};
+
+/**
+ * Reviews the exact removal shape emitted by `buildV4RemovePositionTransaction`:
+ * one DECREASE_LIQUIDITY or BURN_POSITION action followed by TAKE_PAIR to
+ * PositionManager's `msgSender()` sentinel. Pool identity beyond the currency pair
+ * must be independently proven by a same-block token-ID position read.
+ */
+export function reviewV4RemovePositionCalldata(data: Hex, expected: V4ExpectedRemoval): V4RemoveActionParams {
+  try {
+    const decoded = decodeFunctionData({ abi: v4PositionManagerAbi, data });
+    let unlockData: Hex;
+    let deadline: bigint;
+    if (decoded.functionName === 'multicall') {
+      const calls = decoded.args[0].map(call => decodeFunctionData({ abi: v4PositionManagerAbi, data: call }));
+      if (calls.length !== 1 || calls[0]!.functionName !== 'modifyLiquidities') {
+        mismatch('Removal calldata multicall must contain exactly one modifyLiquidities call');
+      }
+      [unlockData, deadline] = calls[0]!.args as [Hex, bigint];
+    } else if (decoded.functionName === 'modifyLiquidities') {
+      [unlockData, deadline] = decoded.args;
+    } else {
+      return mismatch('Removal calldata is not a position-manager modifyLiquidities call');
+    }
+
+    const [actionsBytes, actionParams] = decodeAbiParameters(unlockDataParams, unlockData) as [Hex, readonly Hex[]];
+    const actionIds = decodeActionIds(actionsBytes);
+    if (actionIds.length !== 2 || actionParams.length !== 2) {
+      mismatch('Removal calldata must contain exactly one liquidity action followed by TAKE_PAIR');
+    }
+
+    let tokenId: bigint;
+    let liquidityRemoved: bigint;
+    let amount0Min: bigint;
+    let amount1Min: bigint;
+    let hookData: Hex;
+    let burned: boolean;
+    if (actionIds[0] === DECREASE_LIQUIDITY_ACTION) {
+      [tokenId, liquidityRemoved, amount0Min, amount1Min, hookData] = decodeAbiParameters(
+        decreaseLiquidityParams,
+        actionParams[0]!,
+      ) as [bigint, bigint, bigint, bigint, Hex];
+      burned = false;
+      if (liquidityRemoved <= 0n) mismatch('Removal calldata removes non-positive liquidity');
+    } else if (actionIds[0] === BURN_POSITION_ACTION) {
+      [tokenId, amount0Min, amount1Min, hookData] = decodeAbiParameters(
+        burnPositionParams,
+        actionParams[0]!,
+      ) as [bigint, bigint, bigint, Hex];
+      liquidityRemoved = expected.liquidityToRemove;
+      burned = true;
+    } else {
+      return mismatch('Removal calldata must begin with DECREASE_LIQUIDITY or BURN_POSITION');
+    }
+
+    if (actionIds[1] !== TAKE_PAIR_ACTION) mismatch('Removal liquidity action must be followed by TAKE_PAIR');
+    const [currency0, currency1, recipient] = decodeAbiParameters(
+      takePairParams,
+      actionParams[1]!,
+    ) as [Address, Address, Address];
+    if (!same(currency0, expected.currency0) || !same(currency1, expected.currency1)) {
+      mismatch('TAKE_PAIR withdraws a different currency pair than expected');
+    }
+    if (!same(recipient, MSG_SENDER)) mismatch('TAKE_PAIR sends withdrawn assets to an unexpected recipient');
+    if (tokenId !== expected.tokenId) mismatch('Removal calldata targets a different position token ID');
+    if (burned !== expected.burnToken) mismatch('Removal calldata burn behavior differs from expected');
+    if (liquidityRemoved !== expected.liquidityToRemove) mismatch('Removal calldata removes different liquidity than expected');
+
+    if (!same(expected.hooks, zeroAddress)) {
+      if (!expected.modelledHookPermissions) {
+        mismatch('Removal targets a pool with a hook but no modelled permissions were supplied to verify it');
+      }
+      const unmodelled = unmodelledV4HookPermissions(expected.hooks, expected.modelledHookPermissions);
+      if (unmodelled.length) mismatch(`Removal pool hook implements unmodelled permissions: ${unmodelled.join(', ')}`);
+    }
+
+    return {
+      tokenId,
+      liquidityRemoved,
+      amount0Min,
+      amount1Min,
+      hookData,
+      currency0,
+      currency1,
+      recipient,
+      deadline,
+      burned,
+    };
+  } catch (error) {
+    if (error instanceof UniswapSdkError) throw error;
+    throw new UniswapSdkError('CALLDATA_MISMATCH', 'Removal calldata contains undecodable position-manager calls', { cause: error });
+  }
+}
 
 /**
  * Decodes and verifies calldata built by `buildV4MintPositionTransaction`: a

@@ -7,8 +7,30 @@ export type { V4Tick, V4TickWindow } from './depth.js';
 export { decodeV4PoolInitialization } from './events.js';
 export { decodeV4HookPermissions, unmodelledV4HookPermissions } from './hooks.js';
 export type { V4HookPermissions } from './hooks.js';
-export { buildV4MintPositionTransaction, reviewV4MintPositionCalldata } from './v4-transactions.js';
-export type { V4BatchPermit, V4BatchPermitDetail, V4ExpectedMint, V4MintActionParams, V4MintPositionParams, V4PoolKeyMaterial, V4PoolState, V4TransactionMaterial } from './v4-transactions.js';
+export {
+  buildV4MintPositionTransaction,
+  buildV4IncreasePositionTransaction,
+  buildV4RemovePositionTransaction,
+  reviewV4MintPositionCalldata,
+  reviewV4IncreasePositionCalldata,
+  reviewV4RemovePositionCalldata,
+} from './v4-transactions.js';
+export type {
+  V4BatchPermit,
+  V4BatchPermitDetail,
+  V4ExpectedMint,
+  V4ExpectedIncrease,
+  V4ExpectedRemoval,
+  V4MintActionParams,
+  V4MintPositionParams,
+  V4IncreaseActionParams,
+  V4IncreasePositionParams,
+  V4PoolKeyMaterial,
+  V4PoolState,
+  V4RemoveActionParams,
+  V4RemovePositionParams,
+  V4TransactionMaterial,
+} from './v4-transactions.js';
 export { buildV4MintPermitBatchTypedData } from './permit2.js';
 export type { V4PermitBatchDetailInput, V4PermitBatchTypedData } from './permit2.js';
 export { arcUniswapV4Mainnet, getArcUniswapV4Deployment } from './deployments.js';
