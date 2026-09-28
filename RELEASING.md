@@ -61,10 +61,14 @@ packed export lint, and packed ESM/type resolution. The published scope includes
 v4 observations and provider plans plus v3/v4 reviewed deployments, exact runtime
 code hashes, unsigned position mint/increase/removal construction, calldata review, compatibility
 checks, pinned receipt evidence, and a self-hash-checked copy of the shared SDK
-conformance rules. Run `npm run test:fork` separately with an
-archive-capable `SDK_FORK_EIP155_4663_RPC_URL`; it simulates and executes the
-reviewed close path on a pinned Anvil fork, then requires the collected receipt
-amounts to match the simulation. Run `npm run test:live-compatibility` before release to
+conformance rules. Run `npm run test:fork` separately with archive-capable
+`SDK_FORK_EIP155_4663_RPC_URL` and `SDK_FORK_EIP155_5042_RPC_URL` endpoints. The
+Robinhood suite simulates and executes the reviewed v3 close path and requires
+receipt amounts to match the simulation. The Arc suite verifies the pinned
+deployment, then executes the SDK-built and independently reviewed unhooked v4
+mint, increase, partial-removal, and atomic-close lifecycle on Anvil using two
+ordinary ERC-20s. It neither broadcasts nor addresses launcher-locked LP. Run
+`npm run test:live-compatibility` before release to
 recheck all three deployment records. Runtime code identity is not source verification or
 custom-hook compatibility. Arc's shared Uniswap deployment is runtime-pinned and its
 official manifest plus retained generated artifacts are reproducible as documented in
