@@ -18,6 +18,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { verifyArcUniswapV4Compatibility } from './compatibility.js';
 import { arcUniswapV4Mainnet } from './deployments.js';
+import { getV4PoolId } from './pool.js';
 import { readV4Pool } from './reads.js';
 import {
   buildV4IncreasePositionTransaction,
@@ -174,8 +175,7 @@ describe.skipIf(!forkUrl)('Uniswap v4 Arc mainnet fork', () => {
       }).find(log => log.args.from === zeroAddress && log.args.to.toLowerCase() === account.toLowerCase());
       expect(transfer).toBeDefined();
       const tokenId = transfer!.args.tokenId;
-      expect(await client.readContract({ address: manager, abi: positionReadAbi, functionName: 'ownerOf', args: [tokenId] })).toBe(account);
-      expect(await client.readContract({ address: manager, abi: positionReadAbi, functionName: 'getPositionLiquidity', args: [tokenId] })).toBe(mintLiquidity);
+      await expectPosition(client, manager, tokenId, account, mintLiquidity, key, -600, 600);
 
       const increaseLiquidity = 5_000_000n;
       const increasePool = await observedPool(client, basePool, key);
@@ -196,7 +196,7 @@ describe.skipIf(!forkUrl)('Uniswap v4 Arc mainnet fork', () => {
       });
       await sendMaterial(localUrl, client, account, increase);
       const totalLiquidity = mintLiquidity + increaseLiquidity;
-      expect(await client.readContract({ address: manager, abi: positionReadAbi, functionName: 'getPositionLiquidity', args: [tokenId] })).toBe(totalLiquidity);
+      await expectPosition(client, manager, tokenId, account, totalLiquidity, key, -600, 600);
 
       const partialLiquidity = totalLiquidity / 3n;
       const partialPool = await observedPool(client, basePool, key);
@@ -223,8 +223,7 @@ describe.skipIf(!forkUrl)('Uniswap v4 Arc mainnet fork', () => {
       expect(balancesAfterPartial.token0).toBeGreaterThan(balancesBeforePartial.token0);
       expect(balancesAfterPartial.token1).toBeGreaterThan(balancesBeforePartial.token1);
       const remainingLiquidity = totalLiquidity - partialLiquidity;
-      expect(await client.readContract({ address: manager, abi: positionReadAbi, functionName: 'getPositionLiquidity', args: [tokenId] })).toBe(remainingLiquidity);
-      expect(await client.readContract({ address: manager, abi: positionReadAbi, functionName: 'ownerOf', args: [tokenId] })).toBe(account);
+      await expectPosition(client, manager, tokenId, account, remainingLiquidity, key, -600, 600);
 
       const closePool = await observedPool(client, basePool, key);
       const close = buildV4RemovePositionTransaction({
@@ -264,6 +263,30 @@ async function observedPool(
 ): Promise<V4PoolState> {
   const snapshot = await readV4Pool(client, arcUniswapV4Mainnet, key);
   return { ...base, sqrtPriceX96: snapshot.sqrtPriceX96, liquidity: snapshot.liquidity, tickCurrent: snapshot.tick };
+}
+
+async function expectPosition(
+  client: PublicClient,
+  manager: Address,
+  tokenId: bigint,
+  owner: Address,
+  liquidity: bigint,
+  key: { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address },
+  tickLower: number,
+  tickUpper: number,
+) {
+  const [actualOwner, actualLiquidity, [actualKey, info]] = await Promise.all([
+    client.readContract({ address: manager, abi: positionReadAbi, functionName: 'ownerOf', args: [tokenId] }),
+    client.readContract({ address: manager, abi: positionReadAbi, functionName: 'getPositionLiquidity', args: [tokenId] }),
+    client.readContract({ address: manager, abi: positionReadAbi, functionName: 'getPoolAndPositionInfo', args: [tokenId] }),
+  ]);
+  const expectedPoolId = getV4PoolId(key);
+  expect(actualOwner).toBe(owner);
+  expect(actualLiquidity).toBe(liquidity);
+  expect(getV4PoolId(actualKey)).toBe(expectedPoolId);
+  expect(info >> 56n).toBe(BigInt(expectedPoolId) >> 56n);
+  expect(Number(BigInt.asIntN(24, info >> 8n))).toBe(tickLower);
+  expect(Number(BigInt.asIntN(24, info >> 32n))).toBe(tickUpper);
 }
 
 async function balances(client: PublicClient, account: Address) {

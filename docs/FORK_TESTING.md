@@ -43,8 +43,9 @@ reviews, simulates, and executes the complete strategy-position lifecycle:
 The suite checks both ERC-20 and Permit2 allowances before the mint, verifies
 the NFT owner and exact on-chain liquidity after each step, requires both token
 balances to increase after each removal, and finally requires `ownerOf` to fail.
-Every submitted calldata blob comes from the SDK builder and passes its matching
-independent reviewer first.
+Every submitted lifecycle calldata blob comes from the SDK builder and passes
+its matching independent reviewer first; the explicit ERC-20 and Permit2 setup
+transactions are separately checked through their on-chain allowances.
 
 Install Foundry and run:
 
