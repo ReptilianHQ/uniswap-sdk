@@ -2,14 +2,15 @@
 
 Reptilian-maintained integration SDK, released independently through GitHub Packages.
 It owns Uniswap protocol mechanics: reviewed deployments, ABI encoding and decoding,
-unsigned v3 transaction material, calldata review, receipt evidence, and v4 observations.
+unsigned v3/v4 transaction material, calldata review, receipt evidence, and v4 observations.
 It never owns keys, authorization policy, transaction submission, persistence, or orchestration.
 
 ## Capabilities and ownership
 
 - `./v4`: full pool identity, Initialize-log normalization, pool state,
   exact-input Quoter simulation, ordered quote batches, initialized tick windows,
-  reviewed Arc infrastructure, and unsigned position-mint material with strict review.
+  reviewed Arc infrastructure, and unsigned position mint, increase, partial-removal,
+  and atomic full-close material with strict review.
 - `./v3`: Robinhood v3 deployment identity, compatibility checks, unsigned
   position transaction builders, strict calldata review, and receipt evidence.
 - `./deployments`, `./compatibility`, `./transactions`, `./receipts`: stable
@@ -82,6 +83,14 @@ finality, capability policy and secret storage. For multicall consumers, use
 `readV4PoolStatesWithBatch`, and `readV4TicksWithBatch` from `./batch`.
 Those helpers preserve the existing host's transport, block and sender context;
 the host must check chain/deployment identity and Quoter multicall compatibility.
+
+V4 position management is deliberately position-scoped. The host must first bind
+the owner, token ID, PoolKey, ticks, and current liquidity at one observation block,
+then independently authorize and simulate the returned unsigned transaction. Increase
+material may carry an exact Permit2 batch. Removal material returns both currencies to
+PositionManager's `msgSender()`; a full exit can burn the NFT atomically. These builders
+do not merge positions or imply that a managed strategy position is the launch position,
+even when both positions happen to share the same underlying pool.
 
 ## Observation and quote guarantees
 

@@ -58,8 +58,8 @@ Run `npm ci --ignore-scripts` and `npm run check`. Checks include TypeScript,
 lint, unit tests, built Node ESM runtime smoke, a runnable consumer example using
 the public package subpaths, publisher checksum and tests,
 packed export lint, and packed ESM/type resolution. The published scope includes
-v4 observations and provider plans plus v3 reviewed deployments, exact runtime
-code hashes, unsigned transaction construction, calldata review, compatibility
+v4 observations and provider plans plus v3/v4 reviewed deployments, exact runtime
+code hashes, unsigned position mint/increase/removal construction, calldata review, compatibility
 checks, pinned receipt evidence, and a self-hash-checked copy of the shared SDK
 conformance rules. Run `npm run test:fork` separately with an
 archive-capable `SDK_FORK_EIP155_4663_RPC_URL`; it simulates and executes the
