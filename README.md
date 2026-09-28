@@ -157,7 +157,8 @@ IDs, native/ERC-20 direction, dynamic-fee hook data, pointer/chain mismatch,
 partial depth, failed versus zero quotes, discovery identity, batched transport
 compatibility, exact reviewed runtime code hashes, and the runnable
 package-subpath consumer example. `npm run test:fork` additionally executes an
-SDK-built and reviewed full position close against the pinned Anvil fork
+SDK-built and reviewed Robinhood v3 full close plus an Arc v4 unhooked
+mint/increase/partial-remove/full-close lifecycle against pinned Anvil forks,
 documented in [docs/FORK_TESTING.md](./docs/FORK_TESTING.md).
 
 `npm run test:live-compatibility` rechecks the two Robinhood deployments and the Arc v4
