@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const PUBLISHER_VERSION = '1.2.2';
+export const PUBLISHER_VERSION = '1.2.3';
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const run = (cmd, args, cwd = process.cwd()) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 const safePath = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes('\\') && !value.split('/').includes('..');
@@ -129,7 +129,10 @@ export function registryDownload(spec, registry) {
     return readFileSync(join(staging, packed.filename));
   } finally { rmSync(staging, { recursive: true, force: true }); }
 }
-export async function publishRelease(record, { lookup, publish, tag, download, wait = () => new Promise(resolve => setTimeout(resolve, 5000)) }) {
+// npm stages a publish and can take minutes to expose it, so verification must outlast that window.
+export const VERIFY_ATTEMPTS = 24;
+export const VERIFY_INTERVAL_MS = 10000;
+export async function publishRelease(record, { lookup, publish, tag, download, wait = () => new Promise(resolve => setTimeout(resolve, VERIFY_INTERVAL_MS)) }) {
   assert.equal(typeof download, 'function', 'Registry tarball download is required for immutable-byte verification');
   // Preflight the entire group before the first write, including channel rollback.
   const states = [];
@@ -146,7 +149,11 @@ export async function publishRelease(record, { lookup, publish, tag, download, w
     states.push({ pkg, existing, repair });
   }
   for (const { pkg, existing, repair } of states) {
-    if (!existing) publish(pkg, record);
+    // A rejected publish (e.g. 409 on a still-staged version from an earlier attempt) is only fatal if the exact reviewed bytes never appear.
+    let publishError;
+    if (!existing) {
+      try { publish(pkg, record); } catch (error) { publishError = error; }
+    }
     // Repair an interrupted channel update even when the immutable version exists.
     if (repair) {
       const current = await lookup(`${pkg.name}@${record.channel}`, record.registry);
@@ -154,7 +161,7 @@ export async function publishRelease(record, { lookup, publish, tag, download, w
       if (current?.version !== pkg.version) tag(pkg, record);
     }
     let verified = false;
-    for (let attempt = 0; attempt < 6; attempt++) {
+    for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
       const exact = await lookup(`${pkg.name}@${pkg.version}`, record.registry);
       const channel = await lookup(`${pkg.name}@${record.channel}`, record.registry);
       if (exact) assertPublished(pkg, exact);
@@ -164,8 +171,9 @@ export async function publishRelease(record, { lookup, publish, tag, download, w
         verified = true;
         break;
       }
-      if (attempt < 5) await wait();
+      if (attempt < VERIFY_ATTEMPTS - 1) await wait();
     }
+    if (!verified && publishError) throw publishError;
     assert.ok(verified, `Registry verification failed for ${pkg.name}`);
   }
 }

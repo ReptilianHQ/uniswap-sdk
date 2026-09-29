@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, assertDownloaded, integrity, publishRelease, registryDownload, registryLookup } from './publisher.mjs';
+import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, assertDownloaded, integrity, publishRelease, VERIFY_ATTEMPTS, VERIFY_INTERVAL_MS, registryDownload, registryLookup } from './publisher.mjs';
 const group = { id: 'consumer-contract', tagPrefix: 'consumer-v', registry: 'https://registry.npmjs.org', access: 'public', channels: ['latest'], pack: 'npm', packages: [{ name: '@example/consumer', path: 'packages/consumer' }] };
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 function fixture(run) {
@@ -81,6 +81,55 @@ test('public exact-byte retries skip publication and reject mismatched registry 
   await publishRelease(record, io); assert.equal(writes, 0);
   io.lookup = () => ({ name: pkg.name, version: pkg.version, dist: { integrity: 'wrong' } });
   await assert.rejects(publishRelease(record, io), /Immutable bytes/); assert.equal(writes, 0);
+});
+const stagedFixture = () => {
+  const bytes = Buffer.from('reviewed');
+  const pkg = { name: group.packages[0].name, version: '1.2.3', integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}` };
+  const record = { registry: group.registry, channel: 'latest', packages: [pkg] };
+  const exact = { name: pkg.name, version: pkg.version, dist: { integrity: pkg.integrity } };
+  return { bytes, pkg, record, exact };
+};
+const rejectedPublish = () => { throw new Error('409 Cannot publish over previously staged version'); };
+test('a rejected publish of a still-staged version succeeds once the reviewed bytes appear', async () => {
+  const { bytes, record, exact } = stagedFixture();
+  let waits = 0;
+  let publishes = 0;
+  let visible = false;
+  await publishRelease(record, {
+    lookup: () => (visible ? exact : null),
+    publish: () => { publishes++; rejectedPublish(); },
+    tag: () => {}, download: () => bytes, wait: async () => { if (++waits === 3) visible = true; },
+  });
+  assert.equal(waits, 3);
+  assert.equal(publishes, 1);
+});
+test('a rejected publish whose bytes never appear rethrows the publish error after the full verify window', async () => {
+  const { bytes, record } = stagedFixture();
+  let waits = 0;
+  await assert.rejects(publishRelease(record, {
+    lookup: () => null, publish: rejectedPublish, tag: () => {}, download: () => bytes, wait: async () => { waits++; },
+  }), /409 Cannot publish/);
+  assert.equal(waits, VERIFY_ATTEMPTS - 1);
+  assert.ok(VERIFY_ATTEMPTS * VERIFY_INTERVAL_MS >= 240_000, 'verify window must outlast npm staging');
+});
+test('a rejected publish still rejects when the version that appears has different bytes', async () => {
+  const { bytes, pkg, record } = stagedFixture();
+  let reads = 0;
+  await assert.rejects(publishRelease(record, {
+    lookup: spec => (spec.endsWith(`@${pkg.version}`) && ++reads > 1 ? { name: pkg.name, version: pkg.version, dist: { integrity: 'wrong' } } : null),
+    publish: rejectedPublish, tag: () => {}, download: () => bytes, wait: async () => {},
+  }), /Immutable bytes/);
+});
+test('a rejected publish does not succeed while the channel lags the exact version', async () => {
+  const { bytes, pkg, record, exact } = stagedFixture();
+  let exactReads = 0;
+  await assert.rejects(publishRelease(record, {
+    lookup: spec => {
+      if (!spec.endsWith(`@${pkg.version}`)) return spec.endsWith('@latest') ? { version: '1.2.2' } : null;
+      return ++exactReads > 1 ? exact : null;
+    },
+    publish: rejectedPublish, tag: () => {}, download: () => bytes, wait: async () => {},
+  }), /409 Cannot publish/);
 });
 test('existing retry rejects downloaded bytes before a channel repair can write', async () => {
   const bytes = Buffer.from('reviewed registry bytes');
