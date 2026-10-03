@@ -1,7 +1,25 @@
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
-import { arcUniswapV4Mainnet, robinhoodUniswapV3Mainnet, robinhoodUniswapV3Testnet } from './deployments.js';
+import {
+  arcUniswapV4Mainnet,
+  findUniswapV3DeploymentForNetwork,
+  findUniswapV4DeploymentForNetwork,
+  getUniswapV3Deployment,
+  getUniswapV4Deployment,
+  robinhoodUniswapV3Mainnet,
+  robinhoodUniswapV3Testnet,
+  uniswapV3Deployments,
+  uniswapV4Deployments,
+} from './deployments.js';
+
+// Upstream's ESM build has extensionless directory imports; its CJS export resolves.
+const upstream = createRequire(import.meta.url)('@uniswap/sdk-core') as {
+  CHAIN_TO_ADDRESSES_MAP: Record<number, Record<string, string | undefined> | undefined>;
+};
+// Reviewed chains Uniswap's own SDK does not list yet; every other deployment must match upstream.
+const notInUpstream = new Set<number>([robinhoodUniswapV3Testnet.chainId]);
 
 function provenance(network: 'mainnet' | 'testnet'): Record<string, unknown> {
   return JSON.parse(readFileSync(new URL(`../provenance/${network}.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
@@ -87,5 +105,57 @@ describe('Arc Uniswap v4 deployment provenance', () => {
       stateView: arcUniswapV4Mainnet.contracts.stateView,
       quoter: arcUniswapV4Mainnet.contracts.quoter,
     });
+  });
+});
+
+describe('reviewed deployment tables', () => {
+  it('resolves every reviewed deployment by chain and network, and nothing else', () => {
+    // Non-empty, so the upstream comparisons below cannot pass by checking nothing.
+    expect(uniswapV3Deployments.length).toBeGreaterThan(0);
+    expect(uniswapV4Deployments.length).toBeGreaterThan(0);
+    for (const deployment of uniswapV3Deployments) {
+      expect(getUniswapV3Deployment(deployment.chainId)).toBe(deployment);
+      expect(findUniswapV3DeploymentForNetwork(deployment.network)).toBe(deployment);
+    }
+    for (const deployment of uniswapV4Deployments) {
+      expect(getUniswapV4Deployment(deployment.chainId)).toBe(deployment);
+      expect(findUniswapV4DeploymentForNetwork(deployment.network)).toBe(deployment);
+    }
+    expect(() => getUniswapV4Deployment(1)).toThrow(expect.objectContaining({ code: 'CHAIN_MISMATCH' }));
+    expect(() => getUniswapV3Deployment(1)).toThrow(expect.objectContaining({ code: 'CHAIN_MISMATCH' }));
+    expect(findUniswapV3DeploymentForNetwork('ethereum-mainnet')).toBeUndefined();
+    expect(findUniswapV4DeploymentForNetwork('ethereum-mainnet')).toBeUndefined();
+    expect(findUniswapV4DeploymentForNetwork('__proto__')).toBeUndefined();
+  });
+
+  // universalRouter, permit2, wrappedNative and multicall3 are not in upstream's per-chain map, so they are not compared.
+  it('pins the same v4 addresses Uniswap publishes for each chain', () => {
+    for (const deployment of uniswapV4Deployments) {
+      const published = upstream.CHAIN_TO_ADDRESSES_MAP[deployment.chainId];
+      if (notInUpstream.has(deployment.chainId)) {
+        expect(published, `${deployment.id} is now listed upstream`).toBeUndefined();
+        continue;
+      }
+      expect(published, `${deployment.id} is not listed upstream`).toBeDefined();
+      expect(getAddress(published!.v4PoolManagerAddress!)).toBe(deployment.contracts.poolManager);
+      expect(getAddress(published!.v4PositionManagerAddress!)).toBe(deployment.contracts.positionManager);
+      expect(getAddress(published!.v4StateView!)).toBe(deployment.contracts.stateView);
+      expect(getAddress(published!.v4QuoterAddress!)).toBe(deployment.contracts.quoter);
+    }
+  });
+
+  it('pins the same v3 addresses Uniswap publishes for each chain', () => {
+    for (const deployment of uniswapV3Deployments) {
+      const published = upstream.CHAIN_TO_ADDRESSES_MAP[deployment.chainId];
+      if (notInUpstream.has(deployment.chainId)) {
+        expect(published, `${deployment.id} is now listed upstream`).toBeUndefined();
+        continue;
+      }
+      expect(published, `${deployment.id} is not listed upstream`).toBeDefined();
+      expect(getAddress(published!.v3CoreFactoryAddress!)).toBe(deployment.contracts.factory);
+      expect(getAddress(published!.nonfungiblePositionManagerAddress!)).toBe(deployment.contracts.nonfungiblePositionManager);
+      expect(getAddress(published!.quoterAddress!)).toBe(deployment.contracts.quoterV2);
+      expect(getAddress(published!.swapRouter02Address!)).toBe(deployment.contracts.swapRouter02);
+    }
   });
 });

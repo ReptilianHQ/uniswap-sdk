@@ -2,8 +2,8 @@ import { getAddress, keccak256, type Address, type Hex, type PublicClient } from
 import { v4PositionManagerAbi, v4QuoterAbi, v4StateViewAbi } from './abis.js';
 import { V3_ABI_REVISION, v3PositionManagerAbi } from './v3-abis.js';
 import type {
-  ArcUniswapV4ContractName,
-  ArcUniswapV4Deployment,
+  UniswapV4ContractName,
+  UniswapV4Deployment,
   UniswapV3ContractName,
   UniswapV3Deployment,
 } from './deployments.js';
@@ -18,12 +18,12 @@ export interface UniswapV3CompatibilityReport {
   positionManagerWrappedNative: Address;
 }
 
-export interface ArcUniswapV4CompatibilityReport {
+export interface UniswapV4CompatibilityReport {
   chainId: number;
   blockNumber: bigint;
   blockHash: Hex;
   contractsWithCode: readonly Address[];
-  runtimeCodeHashes: Readonly<Record<ArcUniswapV4ContractName, Hex>>;
+  runtimeCodeHashes: Readonly<Record<UniswapV4ContractName, Hex>>;
   stateViewPoolManager: Address;
   quoterPoolManager: Address;
   positionManagerPoolManager: Address;
@@ -82,10 +82,10 @@ export async function verifyUniswapV3Compatibility(
  * Retained upstream generated initcode is verified separately by
  * verify-v4-retained-artifacts.mjs; that check is not a fresh source compilation.
  */
-export async function verifyArcUniswapV4Compatibility(
+export async function verifyUniswapV4Compatibility(
   client: PublicClient,
-  deployment: ArcUniswapV4Deployment,
-): Promise<ArcUniswapV4CompatibilityReport> {
+  deployment: UniswapV4Deployment,
+): Promise<UniswapV4CompatibilityReport> {
   return rpc(async () => {
     for (const name of ['poolManager', 'stateView', 'quoter'] as const) {
       if (deployment[name].toLowerCase() !== deployment.contracts[name].toLowerCase()) {
@@ -101,9 +101,9 @@ export async function verifyArcUniswapV4Compatibility(
       mismatch('referenceBlock.hash', deployment.referenceBlock.hash, block.hash);
     }
 
-    const contractNames = Object.keys(deployment.contracts) as ArcUniswapV4ContractName[];
+    const contractNames = Object.keys(deployment.contracts) as UniswapV4ContractName[];
     const checked = contractNames.map(name => deployment.contracts[name]);
-    const runtimeCodeHashes = {} as Record<ArcUniswapV4ContractName, Hex>;
+    const runtimeCodeHashes = {} as Record<UniswapV4ContractName, Hex>;
     for (const name of contractNames) {
       const address = deployment.contracts[name];
       const bytecode = await client.getBytecode({ address, blockNumber: deployment.referenceBlock.number });

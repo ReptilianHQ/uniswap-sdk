@@ -33,15 +33,22 @@ export type {
 } from './v4-transactions.js';
 export { buildV4MintPermitBatchTypedData } from './permit2.js';
 export type { V4PermitBatchDetailInput, V4PermitBatchTypedData } from './permit2.js';
-export { arcUniswapV4Mainnet, getArcUniswapV4Deployment } from './deployments.js';
-export type {
-  ArcUniswapV4ArtifactBackedContractName,
-  ArcUniswapV4ContractName,
-  ArcUniswapV4Contracts,
-  ArcUniswapV4Deployment,
-  ArcUniswapV4DeploymentId,
-  ArcUniswapV4RuntimeCodeHashes,
-  ArcUniswapV4RetainedArtifact,
+export {
+  arcUniswapV4Mainnet,
+  findUniswapV4DeploymentForNetwork,
+  getUniswapV4Deployment,
+  uniswapV4Deployments,
 } from './deployments.js';
-export { verifyArcUniswapV4Compatibility } from './compatibility.js';
-export type { ArcUniswapV4CompatibilityReport } from './compatibility.js';
+export type {
+  UniswapV4ArtifactBackedContractName,
+  UniswapV4ChainId,
+  UniswapV4ContractName,
+  UniswapV4Contracts,
+  UniswapV4Deployment,
+  UniswapV4DeploymentId,
+  UniswapV4Network,
+  UniswapV4RuntimeCodeHashes,
+  UniswapV4RetainedArtifact,
+} from './deployments.js';
+export { verifyUniswapV4Compatibility } from './compatibility.js';
+export type { UniswapV4CompatibilityReport } from './compatibility.js';

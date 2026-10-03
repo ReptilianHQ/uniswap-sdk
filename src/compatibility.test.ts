@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   arcUniswapV4Mainnet,
   robinhoodUniswapV3Testnet,
-  type ArcUniswapV4Deployment,
+  type UniswapV4Deployment,
   type UniswapV3Deployment,
 } from './deployments.js';
-import { verifyArcUniswapV4Compatibility, verifyUniswapV3Compatibility } from './compatibility.js';
+import { verifyUniswapV4Compatibility, verifyUniswapV3Compatibility } from './compatibility.js';
 
 const bytecode = '0x01' as const;
 const runtimeCodeHash = keccak256(bytecode);
@@ -57,7 +57,7 @@ describe('Uniswap v3 compatibility', () => {
   });
 });
 
-const arcDeployment: ArcUniswapV4Deployment = {
+const arcDeployment: UniswapV4Deployment = {
   ...arcUniswapV4Mainnet,
   runtimeCodeHashes: {
     poolManager: runtimeCodeHash,
@@ -89,7 +89,7 @@ function arcClient(overrides: Record<string, unknown> = {}, wiring: readonly unk
   };
 }
 
-describe('Arc Uniswap v4 compatibility', () => {
+describe('Uniswap v4 compatibility', () => {
   it.each([
     ['poolManager', arcDeployment.contracts.permit2],
     ['stateView', arcDeployment.contracts.permit2],
@@ -97,7 +97,7 @@ describe('Arc Uniswap v4 compatibility', () => {
   ] as const)('rejects top-level %s drift before making RPC calls', async (name, wrongValue) => {
     const client = arcClient();
     const deployment = { ...arcDeployment, [name]: wrongValue };
-    await expect(verifyArcUniswapV4Compatibility(client as never, deployment)).rejects.toMatchObject({
+    await expect(verifyUniswapV4Compatibility(client as never, deployment)).rejects.toMatchObject({
       code: 'DEPLOYMENT_MISMATCH',
       path: name,
     });
@@ -109,7 +109,7 @@ describe('Arc Uniswap v4 compatibility', () => {
 
   it('checks the pinned block, runtime code hashes, and immutable wiring', async () => {
     const client = arcClient();
-    const report = await verifyArcUniswapV4Compatibility(client as never, arcDeployment);
+    const report = await verifyUniswapV4Compatibility(client as never, arcDeployment);
     expect(report).toMatchObject({
       chainId: 5_042,
       blockNumber: arcDeployment.referenceBlock.number,
@@ -129,7 +129,7 @@ describe('Arc Uniswap v4 compatibility', () => {
 
   it('rejects a different canonical block before reading bytecode', async () => {
     const client = arcClient({ getBlock: vi.fn().mockResolvedValue({ hash: `0x${'00'.repeat(32)}` }) });
-    await expect(verifyArcUniswapV4Compatibility(client as never, arcDeployment)).rejects.toMatchObject({
+    await expect(verifyUniswapV4Compatibility(client as never, arcDeployment)).rejects.toMatchObject({
       code: 'DEPLOYMENT_MISMATCH',
       path: 'referenceBlock.hash',
     });
@@ -138,7 +138,7 @@ describe('Arc Uniswap v4 compatibility', () => {
 
   it('rejects runtime drift before checking wiring', async () => {
     const client = arcClient({ getBytecode: vi.fn().mockResolvedValue('0x02') });
-    await expect(verifyArcUniswapV4Compatibility(client as never, arcDeployment)).rejects.toMatchObject({
+    await expect(verifyUniswapV4Compatibility(client as never, arcDeployment)).rejects.toMatchObject({
       code: 'DEPLOYMENT_MISMATCH',
       path: 'runtimeCodeHashes.poolManager',
     });
@@ -165,7 +165,7 @@ describe('Arc Uniswap v4 compatibility', () => {
     ];
     wiring[index] = wrongValue;
     const client = arcClient({}, wiring);
-    await expect(verifyArcUniswapV4Compatibility(client as never, arcDeployment)).rejects.toMatchObject({
+    await expect(verifyUniswapV4Compatibility(client as never, arcDeployment)).rejects.toMatchObject({
       code: 'DEPLOYMENT_MISMATCH',
       path,
     });

@@ -74,9 +74,13 @@ A complete deterministic consumer example is available in
 the published package subpaths and demonstrates a pool observation, a partial
 tick result, and branching on `isUniswapSdkError`.
 
-Generic v4 reads still require an explicit `reviewedDeployment`. Arc hosts may select
-`arcUniswapV4Mainnet` and must run `verifyArcUniswapV4Compatibility` before relying on
-its pinned shared Uniswap infrastructure. This does not authenticate Argus Portal,
+Generic v4 reads still require an explicit `reviewedDeployment`. Hosts select one from
+`uniswapV4Deployments` with `getUniswapV4Deployment(chainId)` or
+`findUniswapV4DeploymentForNetwork(network)` (today only `arcUniswapV4Mainnet`), and must
+run `verifyUniswapV4Compatibility` before relying on its pinned shared Uniswap infrastructure.
+V3 hosts use `uniswapV3Deployments` and `getUniswapV3Deployment(chainId)` the same way.
+Addresses are pinned in this package, not read from `@uniswap/sdk-core`; a unit test fails
+when a pinned address disagrees with the address Uniswap publishes for that chain. This does not authenticate Argus Portal,
 hook, locker, splitter, tracker, or fee semantics. Hosts own endpoint selection,
 finality, capability policy and secret storage. For multicall consumers, use
 `quoteV4WithBatch`, `v4PoolStateCalls`, `decodeV4PoolState`,
