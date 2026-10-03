@@ -16,7 +16,7 @@ import {
   type TransactionReceipt,
 } from 'viem';
 import { describe, expect, it } from 'vitest';
-import { verifyArcUniswapV4Compatibility } from './compatibility.js';
+import { verifyUniswapV4Compatibility } from './compatibility.js';
 import { arcUniswapV4Mainnet } from './deployments.js';
 import { getV4PoolId } from './pool.js';
 import { readV4Pool } from './reads.js';
@@ -79,7 +79,7 @@ describe.skipIf(!forkUrl)('Uniswap v4 Arc mainnet fork', () => {
       const client = createPublicClient({ transport: http(localUrl) });
       const block = await client.getBlock({ blockNumber: FORK_BLOCK });
       expect(block.hash).toBe(FORK_BLOCK_HASH);
-      await verifyArcUniswapV4Compatibility(client, arcUniswapV4Mainnet);
+      await verifyUniswapV4Compatibility(client, arcUniswapV4Mainnet);
 
       const account = FUNDED_ACCOUNT;
       await rpc(localUrl, 'anvil_impersonateAccount', [account]);

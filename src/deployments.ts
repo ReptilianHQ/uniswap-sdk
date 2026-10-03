@@ -3,7 +3,8 @@ import { V3_ABI_REVISION } from './v3-abis.js';
 import { UniswapSdkError } from './errors.js';
 import type { V4Deployment } from './pool.js';
 
-export type RobinhoodUniswapV3DeploymentId = 'robinhood-mainnet-v3' | 'robinhood-testnet-v3';
+export type UniswapV3DeploymentId = 'robinhood-mainnet-v3' | 'robinhood-testnet-v3';
+export type UniswapV3Network = 'robinhood-chain-mainnet' | 'robinhood-chain-testnet';
 
 export interface UniswapV3Contracts {
   factory: Address;
@@ -18,9 +19,9 @@ export type UniswapV3ContractName = keyof UniswapV3Contracts;
 export type UniswapV3RuntimeCodeHashes = Readonly<Record<UniswapV3ContractName, Hex>>;
 
 export interface UniswapV3Deployment {
-  id: RobinhoodUniswapV3DeploymentId;
+  id: UniswapV3DeploymentId;
   chainId: number;
-  network: 'robinhood-chain-mainnet' | 'robinhood-chain-testnet';
+  network: UniswapV3Network;
   abiRevision: string;
   provenance: 'official' | 'reviewed-testnet';
   explorerVerification: 'official' | 'partial';
@@ -29,9 +30,10 @@ export interface UniswapV3Deployment {
   runtimeCodeHashes: UniswapV3RuntimeCodeHashes;
 }
 
-export type ArcUniswapV4DeploymentId = 'arc-mainnet-v4';
+export type UniswapV4DeploymentId = 'arc-mainnet-v4';
+export type UniswapV4Network = 'arc-mainnet';
 
-export interface ArcUniswapV4Contracts {
+export interface UniswapV4Contracts {
   poolManager: Address;
   stateView: Address;
   positionManager: Address;
@@ -40,11 +42,11 @@ export interface ArcUniswapV4Contracts {
   permit2: Address;
 }
 
-export type ArcUniswapV4ContractName = keyof ArcUniswapV4Contracts;
-export type ArcUniswapV4RuntimeCodeHashes = Readonly<Record<ArcUniswapV4ContractName, Hex>>;
-export type ArcUniswapV4ArtifactBackedContractName = Exclude<ArcUniswapV4ContractName, 'permit2'>;
+export type UniswapV4ContractName = keyof UniswapV4Contracts;
+export type UniswapV4RuntimeCodeHashes = Readonly<Record<UniswapV4ContractName, Hex>>;
+export type UniswapV4ArtifactBackedContractName = Exclude<UniswapV4ContractName, 'permit2'>;
 
-export interface ArcUniswapV4RetainedArtifact {
+export interface UniswapV4RetainedArtifact {
   repository: 'https://github.com/Uniswap/contracts';
   sourceCommit: string;
   sourcePackageCommit: string;
@@ -56,15 +58,14 @@ export interface ArcUniswapV4RetainedArtifact {
   proxy: false;
 }
 
-export interface ArcUniswapV4Deployment extends V4Deployment {
-  id: ArcUniswapV4DeploymentId;
-  chainId: 5_042;
-  network: 'arc-mainnet';
+export interface UniswapV4Deployment extends V4Deployment {
+  id: UniswapV4DeploymentId;
+  network: UniswapV4Network;
   reviewedAt: string;
   referenceBlock: Readonly<{ number: bigint; hash: Hex }>;
-  contracts: Readonly<ArcUniswapV4Contracts>;
-  runtimeCodeHashes: ArcUniswapV4RuntimeCodeHashes;
-  retainedArtifacts: Readonly<Record<ArcUniswapV4ArtifactBackedContractName, ArcUniswapV4RetainedArtifact>>;
+  contracts: Readonly<UniswapV4Contracts>;
+  runtimeCodeHashes: UniswapV4RuntimeCodeHashes;
+  retainedArtifacts: Readonly<Record<UniswapV4ArtifactBackedContractName, UniswapV4RetainedArtifact>>;
   positionManagerWiring: Readonly<{
     wrappedNative: Address;
     tokenDescriptor: Address;
@@ -130,7 +131,7 @@ export const robinhoodUniswapV3Testnet: UniswapV3Deployment = deepFreeze({
 const uniswapContractsRepository = 'https://github.com/Uniswap/contracts' as const;
 const arcV4SourceCommit = '534603a5bc10d41d57a1c9c34417d472f0dbc0d3';
 const arcUniversalRouterSourceCommit = '02fd1760fa7c05096833c03e01a4143f963c350e';
-const arcV4Contracts: ArcUniswapV4Contracts = {
+const arcV4Contracts: UniswapV4Contracts = {
   poolManager: getAddress('0x8366a39CC670B4001A1121B8F6A443A643e40951'),
   stateView: getAddress('0xF3334192D15450CdD385c8B70e03f9A6bD9E673b'),
   positionManager: getAddress('0x6049c9a0e26405C0985f9E3685C87d0aE917f82B'),
@@ -145,7 +146,7 @@ const arcV4Contracts: ArcUniswapV4Contracts = {
  * This proves only the shared Uniswap contracts. Argus Portal, hook, locker,
  * splitter, and tracker compatibility remains the launcher adapter's gate.
  */
-export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
+export const arcUniswapV4Mainnet: UniswapV4Deployment = deepFreeze({
   id: 'arc-mainnet-v4',
   chainId: 5_042,
   network: 'arc-mainnet',
@@ -236,15 +237,30 @@ export const arcUniswapV4Mainnet: ArcUniswapV4Deployment = deepFreeze({
   ],
 });
 
-export function getRobinhoodUniswapV3Deployment(chainId: number): UniswapV3Deployment {
-  if (chainId === robinhoodUniswapV3Mainnet.chainId) return robinhoodUniswapV3Mainnet;
-  if (chainId === robinhoodUniswapV3Testnet.chainId) return robinhoodUniswapV3Testnet;
-  throw new UniswapSdkError('CHAIN_MISMATCH', `Unsupported Robinhood Uniswap v3 chain ID ${chainId}`);
+/** Every reviewed Uniswap v3 deployment. Addresses are pinned here, not read from upstream. */
+export const uniswapV3Deployments: readonly UniswapV3Deployment[] = Object.freeze([
+  robinhoodUniswapV3Mainnet,
+  robinhoodUniswapV3Testnet,
+]);
+
+/** Every reviewed Uniswap v4 deployment. Addresses are pinned here, not read from upstream. */
+export const uniswapV4Deployments: readonly UniswapV4Deployment[] = Object.freeze([arcUniswapV4Mainnet]);
+
+export function getUniswapV3Deployment(chainId: number): UniswapV3Deployment {
+  const deployment = uniswapV3Deployments.find(candidate => candidate.chainId === chainId);
+  if (!deployment) throw new UniswapSdkError('CHAIN_MISMATCH', `No reviewed Uniswap v3 deployment for chain ID ${chainId}`);
+  return deployment;
 }
 
-export function getArcUniswapV4Deployment(chainId: number): ArcUniswapV4Deployment {
-  if (chainId === arcUniswapV4Mainnet.chainId) return arcUniswapV4Mainnet;
-  throw new UniswapSdkError('CHAIN_MISMATCH', `Unsupported Arc Uniswap v4 chain ID ${chainId}`);
+export function getUniswapV4Deployment(chainId: number): UniswapV4Deployment {
+  const deployment = uniswapV4Deployments.find(candidate => candidate.chainId === chainId);
+  if (!deployment) throw new UniswapSdkError('CHAIN_MISMATCH', `No reviewed Uniswap v4 deployment for chain ID ${chainId}`);
+  return deployment;
+}
+
+/** The reviewed v4 deployment for a network key, or undefined when the network has none. */
+export function findUniswapV4DeploymentForNetwork(network: string): UniswapV4Deployment | undefined {
+  return uniswapV4Deployments.find(candidate => candidate.network === network);
 }
 
 function deepFreeze<T>(value: T): T {
