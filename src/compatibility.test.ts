@@ -89,7 +89,7 @@ function arcClient(overrides: Record<string, unknown> = {}, wiring: readonly unk
   };
 }
 
-describe('Arc Uniswap v4 compatibility', () => {
+describe('Uniswap v4 compatibility', () => {
   it.each([
     ['poolManager', arcDeployment.contracts.permit2],
     ['stateView', arcDeployment.contracts.permit2],

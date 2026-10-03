@@ -4,6 +4,7 @@ import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
 import {
   arcUniswapV4Mainnet,
+  findUniswapV3DeploymentForNetwork,
   findUniswapV4DeploymentForNetwork,
   getUniswapV3Deployment,
   getUniswapV4Deployment,
@@ -18,7 +19,7 @@ const upstream = createRequire(import.meta.url)('@uniswap/sdk-core') as {
   CHAIN_TO_ADDRESSES_MAP: Record<number, Record<string, string | undefined> | undefined>;
 };
 // Reviewed chains Uniswap's own SDK does not list yet; every other deployment must match upstream.
-const notInUpstream = new Set([robinhoodUniswapV3Testnet.chainId]);
+const notInUpstream = new Set<number>([robinhoodUniswapV3Testnet.chainId]);
 
 function provenance(network: 'mainnet' | 'testnet'): Record<string, unknown> {
   return JSON.parse(readFileSync(new URL(`../provenance/${network}.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
@@ -109,17 +110,25 @@ describe('Arc Uniswap v4 deployment provenance', () => {
 
 describe('reviewed deployment tables', () => {
   it('resolves every reviewed deployment by chain and network, and nothing else', () => {
-    for (const deployment of uniswapV3Deployments) expect(getUniswapV3Deployment(deployment.chainId)).toBe(deployment);
+    // Non-empty, so the upstream comparisons below cannot pass by checking nothing.
+    expect(uniswapV3Deployments.length).toBeGreaterThan(0);
+    expect(uniswapV4Deployments.length).toBeGreaterThan(0);
+    for (const deployment of uniswapV3Deployments) {
+      expect(getUniswapV3Deployment(deployment.chainId)).toBe(deployment);
+      expect(findUniswapV3DeploymentForNetwork(deployment.network)).toBe(deployment);
+    }
     for (const deployment of uniswapV4Deployments) {
       expect(getUniswapV4Deployment(deployment.chainId)).toBe(deployment);
       expect(findUniswapV4DeploymentForNetwork(deployment.network)).toBe(deployment);
     }
     expect(() => getUniswapV4Deployment(1)).toThrow(expect.objectContaining({ code: 'CHAIN_MISMATCH' }));
     expect(() => getUniswapV3Deployment(1)).toThrow(expect.objectContaining({ code: 'CHAIN_MISMATCH' }));
+    expect(findUniswapV3DeploymentForNetwork('ethereum-mainnet')).toBeUndefined();
     expect(findUniswapV4DeploymentForNetwork('ethereum-mainnet')).toBeUndefined();
     expect(findUniswapV4DeploymentForNetwork('__proto__')).toBeUndefined();
   });
 
+  // universalRouter, permit2, wrappedNative and multicall3 are not in upstream's per-chain map, so they are not compared.
   it('pins the same v4 addresses Uniswap publishes for each chain', () => {
     for (const deployment of uniswapV4Deployments) {
       const published = upstream.CHAIN_TO_ADDRESSES_MAP[deployment.chainId];

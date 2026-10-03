@@ -41,6 +41,7 @@ export {
 } from './deployments.js';
 export type {
   UniswapV4ArtifactBackedContractName,
+  UniswapV4ChainId,
   UniswapV4ContractName,
   UniswapV4Contracts,
   UniswapV4Deployment,

@@ -5,6 +5,7 @@ import type { V4Deployment } from './pool.js';
 
 export type UniswapV3DeploymentId = 'robinhood-mainnet-v3' | 'robinhood-testnet-v3';
 export type UniswapV3Network = 'robinhood-chain-mainnet' | 'robinhood-chain-testnet';
+export type UniswapV3ChainId = 4_663 | 46_630;
 
 export interface UniswapV3Contracts {
   factory: Address;
@@ -20,7 +21,7 @@ export type UniswapV3RuntimeCodeHashes = Readonly<Record<UniswapV3ContractName, 
 
 export interface UniswapV3Deployment {
   id: UniswapV3DeploymentId;
-  chainId: number;
+  chainId: UniswapV3ChainId;
   network: UniswapV3Network;
   abiRevision: string;
   provenance: 'official' | 'reviewed-testnet';
@@ -32,6 +33,7 @@ export interface UniswapV3Deployment {
 
 export type UniswapV4DeploymentId = 'arc-mainnet-v4';
 export type UniswapV4Network = 'arc-mainnet';
+export type UniswapV4ChainId = 5_042;
 
 export interface UniswapV4Contracts {
   poolManager: Address;
@@ -60,6 +62,7 @@ export interface UniswapV4RetainedArtifact {
 
 export interface UniswapV4Deployment extends V4Deployment {
   id: UniswapV4DeploymentId;
+  chainId: UniswapV4ChainId;
   network: UniswapV4Network;
   reviewedAt: string;
   referenceBlock: Readonly<{ number: bigint; hash: Hex }>;
@@ -256,6 +259,11 @@ export function getUniswapV4Deployment(chainId: number): UniswapV4Deployment {
   const deployment = uniswapV4Deployments.find(candidate => candidate.chainId === chainId);
   if (!deployment) throw new UniswapSdkError('CHAIN_MISMATCH', `No reviewed Uniswap v4 deployment for chain ID ${chainId}`);
   return deployment;
+}
+
+/** The reviewed v3 deployment for a network key, or undefined when the network has none. */
+export function findUniswapV3DeploymentForNetwork(network: string): UniswapV3Deployment | undefined {
+  return uniswapV3Deployments.find(candidate => candidate.network === network);
 }
 
 /** The reviewed v4 deployment for a network key, or undefined when the network has none. */
