@@ -17,8 +17,9 @@ that record. Router source, retained-artifact and runtime provenance are in
 [ARC_V4_PROVENANCE.md](./ARC_V4_PROVENANCE.md) and `provenance/arc-mainnet-v4.json`. Pins are
 checked at block `20,889,496`.
 
-`Uniswap/contracts` now lists a v2.1.2 router (`0x8702463e73f74d0b6765aBceb314Ef07aCb92650`) as
-Arc's latest. The pinned router is the one the reviewed Argus flow and the evidence below use.
+`Uniswap/contracts` lists a v2.1.2 router (`0x8702463e73f74d0b6765aBceb314Ef07aCb92650`) as
+Arc's latest. It is known and deliberately not pinned. The Argus SDK manifest pins
+`0x4fcA…9Fb1`, and the mined `PERMIT2_PERMIT` sell below went through it.
 
 ### Pinned transaction evidence
 
@@ -43,25 +44,28 @@ at the block before and the block of the transaction. The transaction calls
 
 ## Robinhood mainnet (4663)
 
-`robinhoodUniversalRouterMainnet` pins Universal Router v2.1.1 at
-`0x8876789976dEcBfCbBbe364623C63652db8C0904`. The record is
-`provenance/robinhood-mainnet-universal-router.json`, reviewed against `Uniswap/contracts`
-`deployments/json/4663.json` at commit `047d585853f89726c0fdef46bbf633bab8fc9051` (SHA-256
-recorded). The evidence:
+`robinhoodUniversalRouterMainnet` pins Universal Router v2.1.2 at
+`0x204FAca1764B154221e35c0d20aBb3c525710498`. This is the manifest's `latest.UniversalRouter`. The
+record is `provenance/robinhood-mainnet-universal-router.json`, reviewed against
+`Uniswap/contracts` `deployments/json/4663.json` at commit
+`047d585853f89726c0fdef46bbf633bab8fc9051` (SHA-256 recorded). The evidence:
 
-- deployment transaction `0x422569c9…ed1fa` (block 18,127) through the deterministic CREATE2
-  deployer; its salt and initcode reproduce the router address;
-- the constructor arguments in that transaction decode to the manifest's parameters,
-  including canonical Permit2 and the v4 PoolManager the router reports;
-- the runtime hashes were taken at block `80,447,948`. The public RPC serves no historical
+- deployment transaction `0xf669b9a4…a339` (block 65,727,895) is a plain CREATE from
+  `0x2179a608…27B6` at nonce 7, which reproduces the router address;
+- keccak256 of that transaction's input equals the manifest's `initcodeHash`
+  (`0x30985525…d539`);
+- its constructor arguments decode to canonical Permit2, the reviewed v3 factory, wrapped
+  native and position manager, the v4 PoolManager the router's `poolManager()` reports, and
+  the production Across SpokePool `0xD29C85F15DF544bA632C9E25829fd29d767d7978`;
+- `Commands.sol` at the router's source commit (`Uniswap/universal-router` `802fe4c`) is
+  byte-identical to the copy the command codec follows;
+- the runtime hashes were taken at block `80,454,448`. The public RPC serves no historical
   state, so verification reads the latest block, as the v3 deployments do.
 
-**Limitation:** the manifest labels this instance *orphaned*. It was deployed with the
-UnsupportedProtocol placeholder (`0x7332D11BD10d18A04B119Cd4671a96f3148002c4`) as its Across
-SpokePool, so `ACROSS_V4_DEPOSIT_V3` cannot work through it. Swap and Permit2 commands are
-unaffected. The manifest's latest Robinhood router is v2.1.2
-`0x204FAca1764B154221e35c0d20aBb3c525710498`, which is not pinned here. Moving to it is a
-separate reviewed change.
+**Not pinned:** v2.1.1 `0x8876789976dEcBfCbBbe364623C63652db8C0904`. The manifest labels it
+orphaned because it was deployed with the UnsupportedProtocol placeholder
+(`0x7332D11BD10d18A04B119Cd4671a96f3148002c4`) as its Across SpokePool. A deployment test keeps
+it from becoming the pin.
 
 ## Command codec
 

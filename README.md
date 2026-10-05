@@ -158,8 +158,7 @@ That covers Arc (`arcUniversalRouterMainnet`, derived from the Arc v4 record) an
 mainnet (`robinhoodUniversalRouterMainnet`). Each record pins the router and Permit2 runtime
 hashes; Permit2's hash differs per chain because it caches a chain-specific domain separator.
 See [docs/UNIVERSAL_ROUTER.md](./docs/UNIVERSAL_ROUTER.md) for provenance, the pinned
-Arc mainnet evidence, and limitations. In particular, Uniswap labels the pinned Robinhood router
-orphaned for Across bridging.
+Arc mainnet evidence, and the newer or orphaned upstream routers that are deliberately not pinned.
 
 ## Observation and quote guarantees
 

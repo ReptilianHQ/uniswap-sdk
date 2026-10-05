@@ -151,6 +151,9 @@ describe('Universal Router deployment provenance', () => {
     expect(getAddress(constructor.v3Factory)).toBe(robinhoodUniswapV3Mainnet.contracts.factory);
     expect(getAddress(constructor.weth9)).toBe(robinhoodUniswapV3Mainnet.contracts.wrappedNative);
     expect(getAddress(constructor.v3NFTPositionManager)).toBe(robinhoodUniswapV3Mainnet.contracts.nonfungiblePositionManager);
+    // The upstream-orphaned v2.1.1 router (placeholder Across SpokePool) must never be the pin.
+    expect(deployment.contracts.universalRouter).not.toBe(getAddress('0x8876789976dEcBfCbBbe364623C63652db8C0904'));
+    expect(getAddress(constructor.spokePool)).not.toBe(getAddress('0x7332D11BD10d18A04B119Cd4671a96f3148002c4'));
   });
 
   it('pins one canonical Permit2 address but a distinct runtime per chain', () => {

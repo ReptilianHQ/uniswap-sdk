@@ -292,7 +292,7 @@ export const arcUniversalRouterMainnet: UniversalRouterDeployment = deepFreeze({
   routerWiring: { poolManager: arcUniswapV4Mainnet.contracts.poolManager },
   limitations: [
     'Source and runtime provenance is the Arc v4 record (provenance/arc-mainnet-v4.json); Permit2 is a canonical-predeploy runtime pin only.',
-    'Uniswap/contracts now lists a v2.1.2 Universal Router on Arc as latest; this pin is the router the reviewed Argus flow and its mined evidence use.',
+    'Uniswap/contracts lists a v2.1.2 Universal Router (0x8702463e73f74d0b6765aBceb314Ef07aCb92650) as Arc\'s latest. It is known and deliberately not pinned: the Argus SDK manifest pins this router, and the mined PERMIT2_PERMIT evidence used it.',
   ],
 });
 
@@ -302,17 +302,17 @@ export const robinhoodUniversalRouterMainnet: UniversalRouterDeployment = deepFr
   network: 'robinhood-chain-mainnet',
   reviewedAt: '2026-10-04',
   contracts: {
-    universalRouter: getAddress('0x8876789976dEcBfCbBbe364623C63652db8C0904'),
+    universalRouter: getAddress('0x204FAca1764B154221e35c0d20aBb3c525710498'),
     permit2: getAddress('0x000000000022D473030F116dDEE9F6B43aC78BA3'),
   },
   runtimeCodeHashes: {
-    universalRouter: '0x2ce6aaaf9f4151f5e1cbf774668772f17f532ae11b15e9284fd0a072a8b0fbde',
+    universalRouter: '0x76b92a5bba2dd32019a64eb421f1750e78c6ba044dbfa6840b722eb5ac63d296',
     permit2: '0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca',
   },
   routerWiring: { poolManager: getAddress('0x8366a39CC670B4001A1121B8F6A443A643e40951') },
   limitations: [
-    'Uniswap/contracts labels this v2.1.1 instance orphaned: it was deployed with the UnsupportedProtocol placeholder as its Across SpokePool, so ACROSS_V4_DEPOSIT_V3 cannot work through it. Swap and Permit2 commands are unaffected.',
-    'Uniswap/contracts lists 0x204FAca1764B154221e35c0d20aBb3c525710498 (v2.1.2) as the latest Robinhood Universal Router; it is not pinned here.',
+    'This is the Uniswap/contracts manifest\'s latest Robinhood Universal Router (v2.1.2), wired to the production Across SpokePool.',
+    'The earlier v2.1.1 router 0x8876789976dEcBfCbBbe364623C63652db8C0904 is labelled orphaned upstream (its Across SpokePool is the UnsupportedProtocol placeholder) and is deliberately not pinned.',
     'The public Robinhood RPC serves no historical state, so runtime hashes are verified at the latest block.',
   ],
 });
