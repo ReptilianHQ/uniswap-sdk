@@ -143,7 +143,7 @@ const data = encodeUniversalRouterExecute({
 Reviewing calldata someone else built (decode, review the permit, verify the signer):
 
 ```ts
-import { verifyPermitSingleSignature } from '@reptilianhq/uniswap-sdk/permit2';
+import { readPermit2Allowance, verifyPermitSingleSignature } from '@reptilianhq/uniswap-sdk/permit2';
 import { decodeUniversalRouterExecute, reviewPermit2PermitInput } from '@reptilianhq/uniswap-sdk/universal-router';
 
 const plan = decodeUniversalRouterExecute(data, {
@@ -158,6 +158,12 @@ const { permitSingle, signature } = reviewPermit2PermitInput(plan.commands[0].in
 const accepted = await verifyPermitSingleSignature(publicClient, {
   owner: sender, chainId: router.chainId, permit2Address: router.contracts.permit2, permitSingle, signature,
 });
+// Allow-revert on PERMIT2_PERMIT means a failed permit still lets the swap run on whatever
+// allowance the owner already has. Bound that standing allowance too, or simulate the exact call.
+const standing = await readPermit2Allowance(publicClient, {
+  owner: sender, token, spender: router.contracts.universalRouter, chainId: router.chainId,
+});
+if (standing.amount > amountIn && standing.expiration >= nowSeconds) throw new Error('standing router allowance exceeds the plan');
 ```
 
 - `buildPermitSingleTypedData` takes its domain and types from `@uniswap/permit2-sdk`. It checks
@@ -183,7 +189,9 @@ const accepted = await verifyPermitSingleSignature(publicClient, {
 - Allow-revert is rejected unless permitted, and it can be permitted per command. Allowing it
   only on `PERMIT2_PERMIT` is the standard mitigation for front-running: anyone who sees the
   signature can submit it to `Permit2.permit` first and consume the nonce. With the flag, the
-  swap still runs on the allowance that call installed.
+  swap still runs on the allowance that call installed. The swap also runs whenever the permit
+  fails for any other reason, on the owner's existing allowance. Hosts that permit the flag
+  should also bound the standing allowance (`readPermit2Allowance`) or simulate the exact call.
 - `reviewPermit2PermitInput` validates every bound at runtime (`INVALID_ARGUMENT` when one is
   missing or malformed) and then checks token, spender, amount range, signature deadline and
   expiration. Expiration 0, which Permit2 treats as "this block", satisfies `minExpiration`.

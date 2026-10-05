@@ -108,6 +108,9 @@ export type UniversalRouterCodecOptions = {
    * against state the plan did not anticipate. `true` accepts it on any command; a list
    * accepts it only on those command types. `[PERMIT2_PERMIT]` is the usual opt-in: it keeps
    * a swap alive when someone has already submitted the same signature to Permit2 directly.
+   * The swap then runs on whatever allowance the owner already has, even when the permit failed
+   * for another reason, so bound that standing allowance too (`readPermit2Allowance`) or
+   * simulate the exact call.
    */
   allowRevert?: boolean | readonly number[];
 };
