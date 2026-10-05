@@ -1,12 +1,15 @@
 import { keccak256 } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  arcUniversalRouterMainnet,
   arcUniswapV4Mainnet,
+  robinhoodUniversalRouterMainnet,
   robinhoodUniswapV3Testnet,
+  type UniversalRouterDeployment,
   type UniswapV4Deployment,
   type UniswapV3Deployment,
 } from './deployments.js';
-import { verifyUniswapV4Compatibility, verifyUniswapV3Compatibility } from './compatibility.js';
+import { verifyUniversalRouterCompatibility, verifyUniswapV4Compatibility, verifyUniswapV3Compatibility } from './compatibility.js';
 
 const bytecode = '0x01' as const;
 const runtimeCodeHash = keccak256(bytecode);
@@ -172,5 +175,66 @@ describe('Uniswap v4 compatibility', () => {
     for (const [request] of client.readContract.mock.calls) {
       expect(request).toEqual(expect.objectContaining({ blockNumber: arcDeployment.referenceBlock.number }));
     }
+  });
+});
+
+describe('Universal Router compatibility', () => {
+  const pinned = (deployment: UniversalRouterDeployment): UniversalRouterDeployment => ({
+    ...deployment,
+    runtimeCodeHashes: { universalRouter: runtimeCodeHash, permit2: runtimeCodeHash },
+  });
+  const arcRouter = pinned(arcUniversalRouterMainnet);
+  const robinhoodRouter = pinned(robinhoodUniversalRouterMainnet);
+
+  function routerClient(deployment: UniversalRouterDeployment, overrides: Record<string, unknown> = {}) {
+    return {
+      getChainId: vi.fn().mockResolvedValue(deployment.chainId),
+      getBlock: vi.fn().mockResolvedValue(deployment.referenceBlock ?? { number: 99n, hash: `0x${'99'.repeat(32)}` }),
+      getBytecode: vi.fn().mockResolvedValue(bytecode),
+      readContract: vi.fn().mockResolvedValue(deployment.routerWiring.poolManager),
+      ...overrides,
+    };
+  }
+
+  it('checks Arc at its pinned block: block hash, both runtimes, and router PoolManager', async () => {
+    const client = routerClient(arcRouter);
+    const report = await verifyUniversalRouterCompatibility(client as never, arcRouter);
+    expect(report).toEqual({
+      chainId: 5_042,
+      blockNumber: arcRouter.referenceBlock!.number,
+      blockHash: arcRouter.referenceBlock!.hash,
+      runtimeCodeHashes: { universalRouter: runtimeCodeHash, permit2: runtimeCodeHash },
+      routerPoolManager: arcRouter.routerWiring.poolManager,
+    });
+    expect(client.getBlock).toHaveBeenCalledWith({ blockNumber: arcRouter.referenceBlock!.number });
+    for (const [request] of [...client.getBytecode.mock.calls, ...client.readContract.mock.calls]) {
+      expect(request).toEqual(expect.objectContaining({ blockNumber: arcRouter.referenceBlock!.number }));
+    }
+  });
+
+  it('checks Robinhood at the latest block because its public RPC keeps no history', async () => {
+    const client = routerClient(robinhoodRouter);
+    const report = await verifyUniversalRouterCompatibility(client as never, robinhoodRouter);
+    expect(client.getBlock).toHaveBeenCalledWith({ blockTag: 'latest' });
+    expect(report.blockNumber).toBe(99n);
+    expect(client.getBytecode).toHaveBeenCalledWith(expect.objectContaining({ address: robinhoodRouter.contracts.universalRouter, blockNumber: 99n }));
+  });
+
+  it.each([
+    ['chainId', { getChainId: vi.fn().mockResolvedValue(1) }],
+    ['referenceBlock.hash', { getBlock: vi.fn().mockResolvedValue({ number: 1n, hash: `0x${'00'.repeat(32)}` }) }],
+    ['runtimeCodeHashes.universalRouter', { getBytecode: vi.fn().mockResolvedValue('0x02') }],
+    ['contracts.universalRouter', { getBytecode: vi.fn().mockResolvedValue(undefined) }],
+    ['universalRouter.poolManager', { readContract: vi.fn().mockResolvedValue(arcUniversalRouterMainnet.contracts.permit2) }],
+  ] as const)('rejects %s drift', async (path, override) => {
+    await expect(verifyUniversalRouterCompatibility(routerClient(arcRouter, override) as never, arcRouter)).rejects.toMatchObject({
+      code: 'DEPLOYMENT_MISMATCH',
+      path,
+    });
+  });
+
+  it('rejects a drifted Permit2 runtime even when the router matches', async () => {
+    const client = routerClient(arcRouter, { getBytecode: vi.fn().mockResolvedValueOnce(bytecode).mockResolvedValueOnce('0x02') });
+    await expect(verifyUniversalRouterCompatibility(client as never, arcRouter)).rejects.toMatchObject({ path: 'runtimeCodeHashes.permit2' });
   });
 });

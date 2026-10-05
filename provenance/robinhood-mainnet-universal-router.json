@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "robinhood-mainnet-universal-router",
+  "chainId": 4663,
+  "network": "robinhood-chain-mainnet",
+  "reviewedAt": "2026-10-04",
+  "runtimeCodeHashPin": {
+    "blockNumber": 80447948,
+    "rpc": "https://rpc.mainnet.chain.robinhood.com",
+    "historicalState": false
+  },
+  "officialDeploymentManifest": {
+    "repository": "https://github.com/Uniswap/contracts",
+    "commit": "047d585853f89726c0fdef46bbf633bab8fc9051",
+    "path": "deployments/json/4663.json",
+    "sha256": "da489b8ed42873f03caf280f9a25697d9d63e329e3074027049b0597566508bf",
+    "label": "UniversalRouter v2.1.1 (orphaned: replaced by the v2.1.1 redeploy wired to the production Across SpokePool 0xD29C85F15DF544bA632C9E25829fd29d767d7978; this instance used the placeholder SpokePool 0x7332D11BD10d18A04B119Cd4671a96f3148002c4)",
+    "latestUniversalRouter": "0x204FAca1764B154221e35c0d20aBb3c525710498"
+  },
+  "contracts": {
+    "universalRouter": {
+      "address": "0x8876789976dEcBfCbBbe364623C63652db8C0904",
+      "runtimeCodeHash": "0x2ce6aaaf9f4151f5e1cbf774668772f17f532ae11b15e9284fd0a072a8b0fbde",
+      "runtimeCodeBytes": 24546,
+      "deploymentTransaction": "0x422569c99e80a452d45680fbf16cf04cd4ae79cd2b0d7a6a89cf6603009ed1fa",
+      "deploymentBlock": 18127,
+      "deployer": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+      "create2Salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "create2InitcodeHash": "0x7dd211d29814126e5ca1c1dcb45c147ea6ad5d341aa05ca87f9a0fc017555079",
+      "manifestInitcodeHash": "0x6dba80c0116a490d48657845492bb38374489ed49c296ac50614265f97221510",
+      "manifestCommitHash": "023196a",
+      "constructorParameters": {
+        "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "weth9": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+        "v2Factory": "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f",
+        "v3Factory": "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
+        "pairInitCodeHash": "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
+        "poolInitCodeHash": "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54",
+        "v4PoolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "v3NFTPositionManager": "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
+        "v4PositionManager": "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+        "spokePool": "0x7332D11BD10d18A04B119Cd4671a96f3148002c4"
+      },
+      "proxy": false
+    },
+    "permit2": {
+      "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "runtimeCodeHash": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca",
+      "runtimeCodeBytes": 9152,
+      "assurance": "canonical-predeploy-runtime-only"
+    }
+  },
+  "routerWiring": {
+    "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951"
+  },
+  "limitations": [
+    "The deployment transaction's CREATE2 inputs reproduce the router address, and its constructor arguments decode to the parameters the manifest records, including canonical Permit2. The manifest initcodeHash is retained as published; it was not reproduced, and the router source was not compiled.",
+    "Uniswap/contracts labels this instance orphaned because its Across SpokePool is the UnsupportedProtocol placeholder; ACROSS_V4_DEPOSIT_V3 cannot work through it. The manifest's latest Robinhood Universal Router (v2.1.2) is not pinned here.",
+    "The public RPC serves no historical state, so the runtime pin was taken and is rechecked at the latest block.",
+    "Permit2 is an exact runtime pin of the canonical predeploy; its runtime differs from Arc's because Permit2 caches its chain-specific EIP-712 domain separator."
+  ]
+}

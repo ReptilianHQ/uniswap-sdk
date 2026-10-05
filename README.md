@@ -15,8 +15,12 @@ It never owns keys, authorization policy, transaction submission, persistence, o
   position transaction builders, strict calldata review, and receipt evidence.
 - `./deployments`, `./compatibility`, `./transactions`, `./receipts`: stable
   capability subpaths for the capital-moving v3 surface.
+- `./permit2`: Permit2 typed data for a signed `PermitSingle` (one token's allowance) and the
+  v4-mint `PermitBatch`, signature verification for EOAs and contract wallets, and allowance reads.
+- `./universal-router`: Universal Router 2.x `execute(bytes,bytes[],uint256)` encoding, strict
+  decoding, the `PERMIT2_PERMIT` input codec, and a host-bounded permit reviewer.
 - `./batch`: host-owned multicall integration for quoting, state decoding, and tick discovery.
-- `./abis`: minimal v3 and v4 ABI surface used by the package.
+- `./abis`: minimal v3, v4, Permit2, and Universal Router ABI surface used by the package.
 - `./errors`: stable error codes; JSON serialization omits underlying RPC errors,
   which may contain credentials. The in-process `cause` is diagnostic only.
 
@@ -96,6 +100,67 @@ PositionManager's `msgSender()`; a full exit can burn the NFT atomically. These 
 do not merge positions or imply that a managed strategy position is the launch position,
 even when both positions happen to share the same underlying pool.
 
+## Permit2 signed permits and the Universal Router
+
+A Universal Router swap can carry its own Permit2 allowance: the owner signs a `PermitSingle`
+and the router's `PERMIT2_PERMIT` command (0x0a) calls `Permit2.permit` before the swap, with
+no separate `Permit2.approve` transaction. The package builds and checks that material. The
+host signs, simulates and submits it.
+
+```ts
+import { getUniversalRouterDeployment } from '@reptilianhq/uniswap-sdk/deployments';
+import { verifyUniversalRouterCompatibility } from '@reptilianhq/uniswap-sdk/compatibility';
+import { buildPermitSingleTypedData, readPermit2Allowance, verifyPermitSingleSignature } from '@reptilianhq/uniswap-sdk/permit2';
+import {
+  UNIVERSAL_ROUTER_COMMAND,
+  encodePermit2PermitInput,
+  encodeUniversalRouterExecute,
+} from '@reptilianhq/uniswap-sdk/universal-router';
+
+const router = getUniversalRouterDeployment(chainId);
+await verifyUniversalRouterCompatibility(publicClient, router);
+const { nonce } = await readPermit2Allowance(publicClient, {
+  owner, token, spender: router.contracts.universalRouter, chainId,
+});
+const typedData = buildPermitSingleTypedData({
+  chainId, token, amount, expiration, nonce, spender: router.contracts.universalRouter, sigDeadline: deadline,
+});
+const signature = await wallet.signTypedData(typedData); // host-owned signer
+if (!await verifyPermitSingleSignature(publicClient, { owner, typedData, signature })) throw new Error('bad permit');
+const data = encodeUniversalRouterExecute({
+  commands: [
+    { command: UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT, input: encodePermit2PermitInput(typedData.message, signature) },
+    { command: UNIVERSAL_ROUTER_COMMAND.V4_SWAP, input: v4SwapInput },
+  ],
+  deadline,
+});
+```
+
+- `buildPermitSingleTypedData` takes its domain and types from `@uniswap/permit2-sdk`. It checks
+  uint160 amount, uint48 expiration and nonce, uint256 `sigDeadline`, and nonzero token, spender
+  and Permit2. The result passes unchanged to viem `signTypedData`, `hashTypedData` and
+  `verifyTypedData`.
+- `verifyPermitSingleSignature` rebuilds the typed data from its domain and message before checking it.
+  It recovers EOA signatures locally. ERC-1271, ERC-6492 and every local mismatch fall back to
+  the client's `verifyTypedData`. It proves authorship only. Nonce freshness, deadlines and
+  spender choice remain host checks.
+- `decodeUniversalRouterExecute` accepts only the deadline overload. It rejects unknown or
+  placeholder commands and allow-revert flags unless the caller permits them
+  (`permittedCommands`, `allowRevert`). It also rejects calldata that does not re-encode byte for
+  byte. `reviewPermit2PermitInput` requires explicit token, spender, amount range, signature
+  deadline and expiration bounds, as the v4 position reviewers do for a folded `permitBatch`.
+  It does not check the signer.
+- The `PERMIT2_PERMIT` owner is the router's `msgSender()`, so the signer must send the transaction.
+
+Reviewed Universal Routers come from `universalRouterDeployments` through
+`getUniversalRouterDeployment(chainId)` or `findUniversalRouterDeploymentForNetwork(network)`.
+That covers Arc (`arcUniversalRouterMainnet`, derived from the Arc v4 record) and Robinhood
+mainnet (`robinhoodUniversalRouterMainnet`). Each record pins the router and Permit2 runtime
+hashes; Permit2's hash differs per chain because it caches a chain-specific domain separator.
+See [docs/UNIVERSAL_ROUTER.md](./docs/UNIVERSAL_ROUTER.md) for provenance, the pinned
+Arc mainnet evidence, and limitations. In particular, Uniswap labels the pinned Robinhood router
+orphaned for Across bridging.
+
 ## Observation and quote guarantees
 
 The direct-client RPC operations check chain identity (the `./batch` host owns that check). Pool/tick reads check StateView's
@@ -155,7 +220,8 @@ npm run check
 
 The local suite uses real viem ABI encoding/decoding over a deterministic RPC
 transport, plus official SDK identity comparisons, Hegel property invariants,
-and pinned finalized Robinhood mainnet receipt fixtures.
+pinned finalized Robinhood mainnet receipt fixtures, and a pinned finalized Arc mainnet
+Universal Router `PERMIT2_PERMIT` + `V4_SWAP` transaction.
 It covers v3 construction/review identity, manager-scoped receipt evidence, multiple chain
 IDs, native/ERC-20 direction, dynamic-fee hook data, pointer/chain mismatch,
 partial depth, failed versus zero quotes, discovery identity, batched transport
@@ -165,8 +231,8 @@ SDK-built and reviewed Robinhood v3 full close plus an Arc v4 unhooked
 mint/increase/partial-remove/full-close lifecycle against pinned Anvil forks,
 documented in [docs/FORK_TESTING.md](./docs/FORK_TESTING.md).
 
-`npm run test:live-compatibility` rechecks the two Robinhood deployments and the Arc v4
-deployment against their public RPCs. `UNISWAP_MAINNET_RPC_URL`,
+`npm run test:live-compatibility` rechecks the two Robinhood v3 deployments, the Arc v4
+deployment, and both reviewed Universal Routers against their public RPCs. `UNISWAP_MAINNET_RPC_URL`,
 `UNISWAP_TESTNET_RPC_URL`, and `UNISWAP_ARC_RPC_URL` may override those read-only
 endpoints. Retained-artifact reproduction is documented in
 [docs/ARC_V4_PROVENANCE.md](./docs/ARC_V4_PROVENANCE.md).

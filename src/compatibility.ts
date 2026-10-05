@@ -1,7 +1,9 @@
 import { getAddress, keccak256, type Address, type Hex, type PublicClient } from 'viem';
-import { v4PositionManagerAbi, v4QuoterAbi, v4StateViewAbi } from './abis.js';
+import { universalRouterAbi, v4PositionManagerAbi, v4QuoterAbi, v4StateViewAbi } from './abis.js';
 import { V3_ABI_REVISION, v3PositionManagerAbi } from './v3-abis.js';
 import type {
+  UniversalRouterContractName,
+  UniversalRouterDeployment,
   UniswapV4ContractName,
   UniswapV4Deployment,
   UniswapV3ContractName,
@@ -31,6 +33,15 @@ export interface UniswapV4CompatibilityReport {
   positionManagerWrappedNative: Address;
   positionManagerTokenDescriptor: Address;
   positionManagerUnsubscribeGasLimit: bigint;
+}
+
+export interface UniversalRouterCompatibilityReport {
+  chainId: number;
+  /** The pinned reference block, or the latest block when the deployment has none. */
+  blockNumber: bigint;
+  blockHash: Hex;
+  runtimeCodeHashes: Readonly<Record<UniversalRouterContractName, Hex>>;
+  routerPoolManager: Address;
 }
 
 /**
@@ -179,6 +190,51 @@ export async function verifyUniswapV4Compatibility(
       positionManagerTokenDescriptor,
       positionManagerUnsubscribeGasLimit,
     };
+  });
+}
+
+/**
+ * Rechecks a reviewed Universal Router and its Permit2: chain identity, the pinned block hash
+ * where the deployment has one, exact runtime bytecode of both contracts, and the router's
+ * `poolManager()` immutable. The router's Permit2 pointer is a private immutable; it is covered
+ * by the exact runtime hash, not read separately.
+ */
+export async function verifyUniversalRouterCompatibility(
+  client: PublicClient,
+  deployment: UniversalRouterDeployment,
+): Promise<UniversalRouterCompatibilityReport> {
+  return rpc(async () => {
+    const chainId = await client.getChainId();
+    if (chainId !== deployment.chainId) mismatch('chainId', deployment.chainId, chainId);
+
+    const block = deployment.referenceBlock
+      ? await client.getBlock({ blockNumber: deployment.referenceBlock.number })
+      : await client.getBlock({ blockTag: 'latest' });
+    if (deployment.referenceBlock && block.hash !== deployment.referenceBlock.hash) {
+      mismatch('referenceBlock.hash', deployment.referenceBlock.hash, block.hash);
+    }
+    if (block.number === null || block.hash === null) mismatch('block', 'a mined block', 'pending block');
+    const blockNumber = block.number;
+
+    const runtimeCodeHashes = {} as Record<UniversalRouterContractName, Hex>;
+    for (const name of Object.keys(deployment.contracts) as UniversalRouterContractName[]) {
+      const bytecode = await client.getBytecode({ address: deployment.contracts[name], blockNumber });
+      if (!bytecode || bytecode === '0x') mismatch(`contracts.${name}`, 'deployed bytecode', bytecode ?? 'undefined');
+      const runtimeCodeHash = keccak256(bytecode);
+      if (runtimeCodeHash !== deployment.runtimeCodeHashes[name]) {
+        mismatch(`runtimeCodeHashes.${name}`, deployment.runtimeCodeHashes[name], runtimeCodeHash);
+      }
+      runtimeCodeHashes[name] = runtimeCodeHash;
+    }
+
+    const routerPoolManager = getAddress(await client.readContract({
+      address: deployment.contracts.universalRouter, abi: universalRouterAbi, functionName: 'poolManager', blockNumber,
+    }));
+    if (routerPoolManager !== deployment.routerWiring.poolManager) {
+      mismatch('universalRouter.poolManager', deployment.routerWiring.poolManager, routerPoolManager);
+    }
+
+    return { chainId, blockNumber, blockHash: block.hash, runtimeCodeHashes, routerPoolManager };
   });
 }
 

@@ -32,6 +32,30 @@ const permitTypedData = buildV4MintPermitBatchTypedData({
 assert.equal(permitTypedData.domain.name, 'Permit2');
 assert.equal(permitTypedData.domain.verifyingContract, '0x000000000022D473030F116dDEE9F6B43aC78BA3');
 
+const { buildPermitSingleTypedData } = await import('../dist/permit2.js');
+const {
+  UNIVERSAL_ROUTER_COMMAND,
+  decodeUniversalRouterExecute,
+  encodePermit2PermitInput,
+  encodeUniversalRouterExecute,
+} = await import('../dist/universal-router.js');
+const { arcUniversalRouterMainnet } = await import('../dist/deployments.js');
+const single = buildPermitSingleTypedData({
+  chainId: 5042,
+  token: '0x0000000000000000000000000000000000000010',
+  amount: 1n,
+  expiration: 9_999_999_999n,
+  nonce: 0n,
+  spender: arcUniversalRouterMainnet.contracts.universalRouter,
+  sigDeadline: 9_999_999_999n,
+});
+assert.equal(single.primaryType, 'PermitSingle');
+const routed = encodeUniversalRouterExecute({
+  commands: [{ command: UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT, input: encodePermit2PermitInput(single.message, `0x${'11'.repeat(65)}`) }],
+  deadline: 9_999_999_999n,
+});
+assert.equal(decodeUniversalRouterExecute(routed).commands[0].command, 0x0a);
+
 const require = createRequire(import.meta.url);
 const { Ether, Token } = require('@uniswap/sdk-core');
 const { Pool } = require('@uniswap/v4-sdk');
