@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AllowanceTransfer } from '@uniswap/permit2-sdk';
 import {
-  ContractFunctionExecutionError,
-  ContractFunctionRevertedError,
+  CallExecutionError,
+  encodeFunctionData,
+  ExecutionRevertedError,
   getAddress,
   hashTypedData,
   zeroAddress,
@@ -17,6 +18,7 @@ import {
   validatePermitSingle,
   verifyPermitSingleSignature,
 } from './permit2.js';
+import { erc1271Abi } from './abis.js';
 import { isUniswapSdkError } from './errors.js';
 
 const spender: Address = '0x0000000000000000000000000000000000000900';
@@ -267,18 +269,19 @@ describe('Permit2 PermitSingle signature verification', () => {
   const parts = (signature: Hex) => ({ r: signature.slice(2, 66), s: BigInt(`0x${signature.slice(66, 130)}`), v: parseInt(signature.slice(130, 132), 16) });
   const word = (value: bigint) => value.toString(16).padStart(64, '0');
 
-  // An EOA owner (no code) on the expected chain; readContract must never be reached.
+  // An EOA owner (no code) on the expected chain; the ERC-1271 call must never be reached.
   function eoaClient(chainId = 5_042) {
-    return { getChainId: vi.fn().mockResolvedValue(chainId), getCode: vi.fn().mockResolvedValue(undefined), readContract: vi.fn() };
+    return { getChainId: vi.fn().mockResolvedValue(chainId), getCode: vi.fn().mockResolvedValue(undefined), call: vi.fn() };
   }
   function contractClient(result: unknown) {
     return {
       getChainId: vi.fn().mockResolvedValue(5_042),
       getCode: vi.fn().mockResolvedValue('0x6080'),
-      readContract: result instanceof Error ? vi.fn().mockRejectedValue(result) : vi.fn().mockResolvedValue(result),
+      call: result instanceof Error ? vi.fn().mockRejectedValue(result) : vi.fn().mockResolvedValue({ data: result }),
     };
   }
   const base = { owner: account.address, chainId: 5_042 };
+  const magicWord = `0x1626ba7e${'00'.repeat(28)}` as Hex;
 
   it('accepts a 65-byte v=27/28 EOA signature by ecrecover, from typed data or a decoded permit', async () => {
     const signature = await sign();
@@ -286,7 +289,7 @@ describe('Permit2 PermitSingle signature verification', () => {
     const client = eoaClient();
     await expect(verifyPermitSingleSignature(client, { ...base, typedData, signature })).resolves.toBe(true);
     await expect(verifyPermitSingleSignature(client, { ...base, permitSingle: typedData.message, signature })).resolves.toBe(true);
-    expect(client.readContract).not.toHaveBeenCalled();
+    expect(client.call).not.toHaveBeenCalled();
     expect(client.getCode).toHaveBeenCalledWith({ address: account.address, blockNumber: undefined });
   });
 
@@ -322,24 +325,37 @@ describe('Permit2 PermitSingle signature verification', () => {
   it('asks only the owner\'s ERC-1271 when the owner has code, including an EIP-7702 delegation', async () => {
     const signature = await sign();
     for (const code of ['0x6080', `0xef0100${'12'.repeat(20)}`]) {
-      const client = { ...contractClient('0x1626ba7e'), getCode: vi.fn().mockResolvedValue(code) };
+      const client = { ...contractClient(magicWord), getCode: vi.fn().mockResolvedValue(code) };
       // Even a signature that ecrecovers to the owner is judged by the owner's code.
       await expect(verifyPermitSingleSignature(client, { ...base, typedData, signature, blockNumber: 9n })).resolves.toBe(true);
-      expect(client.readContract).toHaveBeenCalledWith(expect.objectContaining({
-        address: account.address, functionName: 'isValidSignature', args: [hashTypedData(typedData), signature], blockNumber: 9n,
-      }));
+      expect(client.call).toHaveBeenCalledWith({
+        to: account.address,
+        data: encodeFunctionData({ abi: erc1271Abi, functionName: 'isValidSignature', args: [hashTypedData(typedData), signature] }),
+        blockNumber: 9n,
+      });
     }
-    await expect(verifyPermitSingleSignature(contractClient('0xffffffff'), { ...base, typedData, signature })).resolves.toBe(false);
     // A wrapped ERC-6492 signature is refused before asking the owner, even one that would accept it.
-    const wrappedClient = contractClient('0x1626ba7e');
+    const wrappedClient = contractClient(magicWord);
     await expect(verifyPermitSingleSignature(wrappedClient, { ...base, typedData, signature: `${signature}${'6492'.repeat(16)}` as Hex })).resolves.toBe(false);
     expect(wrappedClient.getChainId).not.toHaveBeenCalled();
-    const reverted = new ContractFunctionExecutionError(new ContractFunctionRevertedError({ abi: [], functionName: 'isValidSignature' }), {
-      abi: [], functionName: 'isValidSignature', contractAddress: account.address,
-    });
+    const reverted = new CallExecutionError(new ExecutionRevertedError({ message: 'execution reverted' }), {});
     await expect(verifyPermitSingleSignature(contractClient(reverted), { ...base, typedData, signature })).resolves.toBe(false);
     await expect(verifyPermitSingleSignature(contractClient(new Error('https://user:secret@rpc.example failed')), { ...base, typedData, signature }))
       .rejects.toMatchObject({ code: 'RPC_ERROR' });
+  });
+
+  it('accepts only the magic value as one zero-padded word, as Permit2\'s decoder does', async () => {
+    const signature = await sign();
+    for (const [label, data] of [
+      ['dirty padding', `0x1626ba7e${'00'.repeat(27)}01`],
+      ['short', '0x1626ba7e'],
+      ['long', `${magicWord}${'00'.repeat(32)}`],
+      ['wrong value', `0xffffffff${'00'.repeat(28)}`],
+      ['empty', undefined],
+    ] as const) {
+      await expect(verifyPermitSingleSignature(contractClient(data), { ...base, typedData, signature }), label).resolves.toBe(false);
+    }
+    await expect(verifyPermitSingleSignature(contractClient(magicWord.toUpperCase().replace('0X', '0x')), { ...base, typedData, signature })).resolves.toBe(true);
   });
 
   it('binds the domain to the expected chain and Permit2, and refuses a client on another chain', async () => {

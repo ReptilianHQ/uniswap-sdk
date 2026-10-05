@@ -107,7 +107,7 @@ assert.equal(reviewed.permitSingle.details.amount, 1_000n);
 const accepted = await verifyPermitSingleSignature({
   async getChainId() { return router.chainId; },
   async getCode() { return undefined; }, // the owner is an EOA at this block
-  async readContract() { throw new Error('fixture: an EOA owner is never asked for ERC-1271'); },
+  async call() { throw new Error('fixture: an EOA owner is never asked for ERC-1271'); },
 }, {
   owner: address(5),
   chainId: router.chainId,

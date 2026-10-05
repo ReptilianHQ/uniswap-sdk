@@ -67,12 +67,12 @@ function minedTypedData(overrides: Partial<Parameters<typeof buildPermitSingleTy
 }
 
 // Replays the owner-code read archived with the fixture: the sender had no code, so Permit2
-// took its ecrecover branch. readContract (ERC-1271) must never be reached.
+// took its ecrecover branch. The ERC-1271 call must never be reached.
 function archivedClient(chainId: number = arcUniversalRouterMainnet.chainId) {
   return {
     getChainId: vi.fn().mockResolvedValue(chainId),
     getCode: vi.fn().mockResolvedValue(value.ownerCodeAtBlock === '0x' ? undefined : value.ownerCodeAtBlock),
-    readContract: vi.fn(),
+    call: vi.fn(),
   };
 }
 
@@ -139,7 +139,7 @@ describe('pinned Arc mainnet Universal Router PERMIT2_PERMIT sell', () => {
       signature,
       blockNumber: BigInt(value.blockNumber),
     })).resolves.toBe(true);
-    expect(client.readContract).not.toHaveBeenCalled();
+    expect(client.call).not.toHaveBeenCalled();
   });
 
   it('rejects the real signature for another owner or with any one field changed', async () => {

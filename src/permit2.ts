@@ -1,10 +1,8 @@
 import type { Address, Hex, PublicClient } from 'viem';
 import {
-  AbiDecodingDataSizeTooSmallError,
-  AbiDecodingZeroDataError,
   BaseError,
-  ContractFunctionRevertedError,
-  ContractFunctionZeroDataError,
+  encodeFunctionData,
+  ExecutionRevertedError,
   hashTypedData,
   hexToBigInt,
   hexToNumber,
@@ -240,7 +238,7 @@ export function buildPermitSingleTypedData(input: {
   }
 }
 
-export type Permit2SignatureClient = Pick<PublicClient, 'getChainId' | 'getCode' | 'readContract'>;
+export type Permit2SignatureClient = Pick<PublicClient, 'getChainId' | 'getCode' | 'call'>;
 
 export type VerifyPermitSingleSignatureInput = {
   /** The account Permit2 will treat as signer: for `PERMIT2_PERMIT`, the transaction sender. */
@@ -273,7 +271,7 @@ const HALF_WORD_MASK = (1n << 255n) - 1n;
  *   once the owner's code has been read. `v` of 0 or 1 is rejected because Permit2 does not
  *   normalize it;
  * - an owner with code, including an EIP-7702-delegated EOA, must return the ERC-1271 magic
- *   value from its own `isValidSignature`;
+ *   value from its own `isValidSignature`, as one zero-padded 32-byte word;
  * - ERC-6492-wrapped signatures are rejected without any RPC. Permit2 never unwraps them, so a
  *   counterfactual wallet's permit reverts on chain. This is stricter than Permit2 only for a
  *   deployed wallet whose own `isValidSignature` happens to accept the wrapped bytes.
@@ -366,23 +364,29 @@ async function ecrecoverAccepts(owner: Address, hash: Hex, signature: Hex): Prom
   }
 }
 
-/** Permit2's contract branch: the owner's own ERC-1271 `isValidSignature`, nothing else. */
+// What Permit2's ABI decoder v2 (solc 0.8.17) accepts for `bytes4`: the selector, then zeroes.
+const ERC1271_MAGIC_WORD = `${ERC1271_MAGIC_VALUE}${'00'.repeat(28)}`;
+
+/**
+ * Permit2's contract branch: the owner's own ERC-1271 `isValidSignature`, nothing else. The raw
+ * return is read with `call` and must be exactly one 32-byte word holding the magic value with
+ * zero padding. Permit2's decoder reverts on dirty padding, and a typed decode would hide that.
+ * A longer return is also refused, which is stricter than Permit2 and so safe.
+ */
 async function erc1271Accepts(client: Permit2SignatureClient, owner: Address, hash: Hex, signature: Hex, blockNumber?: bigint): Promise<boolean> {
+  let data: Hex | undefined;
   try {
-    const magicValue = await client.readContract({
-      address: owner, abi: erc1271Abi, functionName: 'isValidSignature', args: [hash, signature], blockNumber,
-    });
-    return magicValue.toLowerCase() === ERC1271_MAGIC_VALUE;
+    ({ data } = await client.call({
+      to: owner,
+      data: encodeFunctionData({ abi: erc1271Abi, functionName: 'isValidSignature', args: [hash, signature] }),
+      blockNumber,
+    }));
   } catch (cause) {
-    // A revert or unusable return value makes Permit2 revert too: not accepted.
-    if (cause instanceof BaseError && cause.walk(error => error instanceof ContractFunctionRevertedError
-      || error instanceof ContractFunctionZeroDataError
-      || error instanceof AbiDecodingZeroDataError
-      || error instanceof AbiDecodingDataSizeTooSmallError)) {
-      return false;
-    }
+    // A revert makes Permit2 revert too: not accepted. Anything else is the transport's failure.
+    if (cause instanceof BaseError && cause.walk(error => error instanceof ExecutionRevertedError)) return false;
     throw new UniswapSdkError('RPC_ERROR', 'ERC-1271 signature check failed', { cause });
   }
+  return data !== undefined && data.toLowerCase() === ERC1271_MAGIC_WORD;
 }
 
 export type Permit2AllowanceReadClient = Pick<PublicClient, 'getChainId' | 'getBlockNumber' | 'readContract'>;
@@ -413,7 +417,9 @@ export interface Permit2Allowance {
  * - a submitted permit's signature is public. Anyone can send it to `Permit2.permit` first,
  *   consuming the nonce so the router's `PERMIT2_PERMIT` reverts and takes the swap with it.
  *   Encoding that command with allow-revert (`allowRevert: [PERMIT2_PERMIT]`) keeps the swap
- *   running on the allowance the front-runner installed;
+ *   running on the allowance the front-runner installed. It also lets the swap run on any
+ *   standing allowance when the permit fails for another reason, so bound that allowance with
+ *   this read or simulate the exact call;
  * - `lockdown` and `invalidateNonces` also move or revoke state between read and use.
  */
 export async function readPermit2Allowance(
