@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AllowanceTransfer } from '@uniswap/permit2-sdk';
-import { getAddress, hashTypedData, zeroAddress, type Address, type Hex } from 'viem';
+import {
+  ContractFunctionExecutionError,
+  ContractFunctionRevertedError,
+  getAddress,
+  hashTypedData,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
   buildPermitSingleTypedData,
@@ -254,60 +262,128 @@ describe('Permit2 PermitSingle signature verification', () => {
   const typedData = buildPermitSingleTypedData({
     chainId: 5_042, token: tokenA, amount: 5n, expiration: 9_999_999_999n, nonce: 0n, spender, sigDeadline: 9_999_999_999n,
   });
+  const curveOrder = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+  const sign = () => account.signTypedData(typedData);
+  const parts = (signature: Hex) => ({ r: signature.slice(2, 66), s: BigInt(`0x${signature.slice(66, 130)}`), v: parseInt(signature.slice(130, 132), 16) });
+  const word = (value: bigint) => value.toString(16).padStart(64, '0');
 
-  it('recovers an EOA signature locally without calling the client', async () => {
-    const signature = await account.signTypedData(typedData);
-    const client = { verifyTypedData: vi.fn() };
-    await expect(verifyPermitSingleSignature(client, { owner: account.address, typedData, signature })).resolves.toBe(true);
-    expect(client.verifyTypedData).not.toHaveBeenCalled();
+  // An EOA owner (no code) on the expected chain; readContract must never be reached.
+  function eoaClient(chainId = 5_042) {
+    return { getChainId: vi.fn().mockResolvedValue(chainId), getCode: vi.fn().mockResolvedValue(undefined), readContract: vi.fn() };
+  }
+  function contractClient(result: unknown) {
+    return {
+      getChainId: vi.fn().mockResolvedValue(5_042),
+      getCode: vi.fn().mockResolvedValue('0x6080'),
+      readContract: result instanceof Error ? vi.fn().mockRejectedValue(result) : vi.fn().mockResolvedValue(result),
+    };
+  }
+  const base = { owner: account.address, chainId: 5_042 };
+
+  it('accepts a 65-byte v=27/28 EOA signature by ecrecover, from typed data or a decoded permit', async () => {
+    const signature = await sign();
+    expect([27, 28]).toContain(parts(signature).v);
+    const client = eoaClient();
+    await expect(verifyPermitSingleSignature(client, { ...base, typedData, signature })).resolves.toBe(true);
+    await expect(verifyPermitSingleSignature(client, { ...base, permitSingle: typedData.message, signature })).resolves.toBe(true);
+    expect(client.readContract).not.toHaveBeenCalled();
+    expect(client.getCode).toHaveBeenCalledWith({ address: account.address, blockNumber: undefined });
   });
 
-  it('falls back to the client for an owner local recovery does not match, and returns its answer', async () => {
-    const signature = await account.signTypedData(typedData);
-    const contractWallet = getAddress('0x0000000000000000000000000000000000001271');
-    const accepting = { verifyTypedData: vi.fn().mockResolvedValue(true) };
-    await expect(verifyPermitSingleSignature(accepting, { owner: contractWallet, typedData, signature })).resolves.toBe(true);
-    expect(accepting.verifyTypedData).toHaveBeenCalledWith(expect.objectContaining({
-      address: contractWallet, primaryType: 'PermitSingle', signature, domain: typedData.domain, message: typedData.message,
-    }));
-    const rejecting = { verifyTypedData: vi.fn().mockResolvedValue(false) };
-    await expect(verifyPermitSingleSignature(rejecting, { owner: contractWallet, typedData, signature })).resolves.toBe(false);
+  it('accepts the EIP-2098 compact form and a high-s signature, as ecrecover does', async () => {
+    const { r, s, v } = parts(await sign());
+    const compact = `0x${r}${word(s | (BigInt(v - 27) << 255n))}` as Hex;
+    await expect(verifyPermitSingleSignature(eoaClient(), { ...base, typedData, signature: compact })).resolves.toBe(true);
+    const highS = `0x${r}${word(curveOrder - s)}${(v === 27 ? 28 : 27).toString(16)}` as Hex;
+    await expect(verifyPermitSingleSignature(eoaClient(), { ...base, typedData, signature: highS })).resolves.toBe(true);
   });
 
-  it('sends ERC-6492 and unrecoverable signatures straight to the client', async () => {
-    const wrapped = `0x${'ab'.repeat(96)}${'6492'.repeat(16)}` as Hex;
-    const client = { verifyTypedData: vi.fn().mockResolvedValue(true) };
-    await expect(verifyPermitSingleSignature(client, { owner: account.address, typedData, signature: wrapped })).resolves.toBe(true);
-    await expect(verifyPermitSingleSignature(client, { owner: account.address, typedData, signature: '0x1234' })).resolves.toBe(true);
-    expect(client.verifyTypedData).toHaveBeenCalledTimes(2);
+  it('rejects v=0/1, other lengths, ERC-6492 wrapping, and another owner, as Permit2 would', async () => {
+    const signature = await sign();
+    const { r, s, v } = parts(signature);
+    // Pick the v=27 form of this signature (it or its high-s twin), then restate its parity
+    // as 0: the same point, which ecrecover still refuses because v is not 27 or 28.
+    const sV27 = v === 27 ? s : curveOrder - s;
+    await expect(verifyPermitSingleSignature(eoaClient(), { ...base, typedData, signature: `0x${r}${word(sV27)}1b` })).resolves.toBe(true);
+    for (const rejected of [
+      `0x${r}${word(sV27)}00`,
+      `0x${r}${word(curveOrder - sV27)}01`,
+      `0x${r}${word(s)}`.slice(0, -2),
+      `0x${r}${word(sV27)}1b00`,
+      `0x${'ab'.repeat(96)}${'6492'.repeat(16)}`,
+      `${signature}${'6492'.repeat(16)}`,
+      `0x${r}${word(0n)}${v.toString(16)}`,
+    ] as Hex[]) {
+      await expect(verifyPermitSingleSignature(eoaClient(), { ...base, typedData, signature: rejected }), rejected.slice(-6)).resolves.toBe(false);
+    }
+    await expect(verifyPermitSingleSignature(eoaClient(), { ...base, owner: spender, typedData, signature })).resolves.toBe(false);
+  });
+
+  it('asks only the owner\'s ERC-1271 when the owner has code, including an EIP-7702 delegation', async () => {
+    const signature = await sign();
+    for (const code of ['0x6080', `0xef0100${'12'.repeat(20)}`]) {
+      const client = { ...contractClient('0x1626ba7e'), getCode: vi.fn().mockResolvedValue(code) };
+      // Even a signature that ecrecovers to the owner is judged by the owner's code.
+      await expect(verifyPermitSingleSignature(client, { ...base, typedData, signature, blockNumber: 9n })).resolves.toBe(true);
+      expect(client.readContract).toHaveBeenCalledWith(expect.objectContaining({
+        address: account.address, functionName: 'isValidSignature', args: [hashTypedData(typedData), signature], blockNumber: 9n,
+      }));
+    }
+    await expect(verifyPermitSingleSignature(contractClient('0xffffffff'), { ...base, typedData, signature })).resolves.toBe(false);
+    // A wrapped ERC-6492 signature is refused before asking the owner, even one that would accept it.
+    const wrappedClient = contractClient('0x1626ba7e');
+    await expect(verifyPermitSingleSignature(wrappedClient, { ...base, typedData, signature: `${signature}${'6492'.repeat(16)}` as Hex })).resolves.toBe(false);
+    expect(wrappedClient.getChainId).not.toHaveBeenCalled();
+    const reverted = new ContractFunctionExecutionError(new ContractFunctionRevertedError({ abi: [], functionName: 'isValidSignature' }), {
+      abi: [], functionName: 'isValidSignature', contractAddress: account.address,
+    });
+    await expect(verifyPermitSingleSignature(contractClient(reverted), { ...base, typedData, signature })).resolves.toBe(false);
+    await expect(verifyPermitSingleSignature(contractClient(new Error('https://user:secret@rpc.example failed')), { ...base, typedData, signature }))
+      .rejects.toMatchObject({ code: 'RPC_ERROR' });
+  });
+
+  it('binds the domain to the expected chain and Permit2, and refuses a client on another chain', async () => {
+    const signature = await sign();
+    for (const bad of [
+      { chainId: 1 },
+      { permit2Address: getAddress('0x0000000000000000000000000000000000000abc') },
+    ]) {
+      await expect(verifyPermitSingleSignature(eoaClient(bad.chainId), { ...base, ...bad, typedData, signature }))
+        .rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    }
+    // A decoded permit carries no domain: the expected chain decides, so a chain-1 check fails.
+    await expect(verifyPermitSingleSignature(eoaClient(1), { ...base, chainId: 1, permitSingle: typedData.message, signature })).resolves.toBe(false);
+    const wrongChain = eoaClient(1);
+    await expect(verifyPermitSingleSignature(wrongChain, { ...base, typedData, signature })).rejects.toMatchObject({ code: 'CHAIN_MISMATCH' });
+    expect(wrongChain.getCode).not.toHaveBeenCalled();
   });
 
   it('verifies against rebuilt typed data, so forged types cannot change what was signed', async () => {
-    // Sign a struct that only differs from PermitSingle by its declared types.
     const forgedTypes = { ...typedData.types, PermitSingle: [...typedData.types.PermitSingle, { name: 'extra', type: 'uint256' }] };
     const forgedSignature = await account.signTypedData({ ...typedData, types: forgedTypes, message: { ...typedData.message, extra: 1n } } as never);
-    const client = { verifyTypedData: vi.fn().mockResolvedValue(false) };
-    await expect(verifyPermitSingleSignature(client, {
-      owner: account.address, typedData: { ...typedData, types: forgedTypes }, signature: forgedSignature,
-    })).resolves.toBe(false);
-    expect(client.verifyTypedData).toHaveBeenCalledWith(expect.objectContaining({ types: typedData.types }));
+    await expect(verifyPermitSingleSignature(eoaClient(), { ...base, typedData: { ...typedData, types: forgedTypes }, signature: forgedSignature }))
+      .resolves.toBe(false);
   });
 
-  it('rejects malformed input and surfaces fallback failures as RPC_ERROR', async () => {
-    const signature = await account.signTypedData(typedData);
-    const client = { verifyTypedData: vi.fn().mockRejectedValue(new Error('https://user:secret@rpc.example failed')) };
+  it('rejects malformed input before any RPC', async () => {
+    const signature = await sign();
+    const client = eoaClient();
     for (const bad of [
       { owner: zeroAddress },
+      { chainId: 0 },
       { signature: '0x' as Hex },
       { signature: 'abc' as Hex },
+      { signature: '0x123' as Hex },
+      { blockNumber: -1n },
+      { permitSingle: typedData.message },
+      { typedData: undefined, permitSingle: undefined },
       { typedData: { ...typedData, primaryType: 'PermitBatch' as 'PermitSingle' } },
       { typedData: { ...typedData, domain: { ...typedData.domain, name: 'Other' as 'Permit2' } } },
       { typedData: { ...typedData, message: { ...typedData.message, sigDeadline: -1n } } },
     ]) {
-      await expect(verifyPermitSingleSignature(client, { owner: account.address, typedData, signature, ...bad }))
-        .rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await expect(verifyPermitSingleSignature(client, { ...base, typedData, signature, ...bad } as never)).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     }
-    await expect(verifyPermitSingleSignature(client, { owner: spender, typedData, signature })).rejects.toMatchObject({ code: 'RPC_ERROR' });
+    expect(client.getChainId).not.toHaveBeenCalled();
   });
 });
 

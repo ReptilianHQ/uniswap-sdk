@@ -30,6 +30,7 @@ type TransactionFixture = {
   input: Hex;
   receipt: { gasUsed: string; logs: { address: Address; topics: [Hex, ...Hex[]]; data: Hex; logIndex: number }[] };
   permit2Allowance: { before: AllowanceObservation; after: AllowanceObservation };
+  ownerCodeAtBlock: Hex;
 };
 
 // A real Arc mainnet sell through the reviewed Universal Router: PERMIT2_PERMIT folded into
@@ -65,10 +66,14 @@ function minedTypedData(overrides: Partial<Parameters<typeof buildPermitSingleTy
   });
 }
 
-// The fallback is only reached when local recovery fails; for this EOA it reports the
-// on-chain answer, which is false for anything recovery already rejected.
-function fallbackClient() {
-  return { verifyTypedData: vi.fn().mockResolvedValue(false) };
+// Replays the owner-code read archived with the fixture: the sender had no code, so Permit2
+// took its ecrecover branch. readContract (ERC-1271) must never be reached.
+function archivedClient(chainId: number = arcUniversalRouterMainnet.chainId) {
+  return {
+    getChainId: vi.fn().mockResolvedValue(chainId),
+    getCode: vi.fn().mockResolvedValue(value.ownerCodeAtBlock === '0x' ? undefined : value.ownerCodeAtBlock),
+    readContract: vi.fn(),
+  };
 }
 
 describe('pinned Arc mainnet Universal Router PERMIT2_PERMIT sell', () => {
@@ -119,19 +124,29 @@ describe('pinned Arc mainnet Universal Router PERMIT2_PERMIT sell', () => {
     })).toBe(value.input);
   });
 
-  it('accepts the real signature for the real owner under SDK-built typed data, with no RPC', async () => {
+  it('accepts the real signature for the real owner by Permit2\'s ecrecover branch', async () => {
     const { commands } = decodeUniversalRouterExecute(value.input);
-    const { signature } = decodePermit2PermitInput(commands[0]!.input);
-    const client = fallbackClient();
-    await expect(verifyPermitSingleSignature(client, { owner, typedData: minedTypedData(), signature })).resolves.toBe(true);
-    expect(client.verifyTypedData).not.toHaveBeenCalled();
+    const { permitSingle, signature } = decodePermit2PermitInput(commands[0]!.input);
+    expect(value.ownerCodeAtBlock).toBe('0x');
+    const client = archivedClient();
+    await expect(verifyPermitSingleSignature(client, { owner, chainId: 5_042, typedData: minedTypedData(), signature })).resolves.toBe(true);
+    // The review-side path: the decoded permit plus the router deployment's chain and Permit2.
+    await expect(verifyPermitSingleSignature(client, {
+      owner,
+      chainId: arcUniversalRouterMainnet.chainId,
+      permit2Address: arcUniversalRouterMainnet.contracts.permit2,
+      permitSingle,
+      signature,
+      blockNumber: BigInt(value.blockNumber),
+    })).resolves.toBe(true);
+    expect(client.readContract).not.toHaveBeenCalled();
   });
 
   it('rejects the real signature for another owner or with any one field changed', async () => {
     const { commands } = decodeUniversalRouterExecute(value.input);
     const { signature } = decodePermit2PermitInput(commands[0]!.input);
     const other = getAddress('0x0000000000000000000000000000000000000bad');
-    await expect(verifyPermitSingleSignature(fallbackClient(), { owner: other, typedData: minedTypedData(), signature })).resolves.toBe(false);
+    await expect(verifyPermitSingleSignature(archivedClient(), { owner: other, chainId: 5_042, typedData: minedTypedData(), signature })).resolves.toBe(false);
 
     for (const change of [
       { chainId: 1 },
@@ -143,13 +158,13 @@ describe('pinned Arc mainnet Universal Router PERMIT2_PERMIT sell', () => {
       { spender: getAddress('0x0000000000000000000000000000000000000900') },
       { sigDeadline: deadline + 1n },
     ]) {
-      const client = fallbackClient();
+      const typedData = minedTypedData(change);
       await expect(
-        verifyPermitSingleSignature(client, { owner, typedData: minedTypedData(change), signature }),
+        verifyPermitSingleSignature(archivedClient(typedData.domain.chainId), {
+          owner, chainId: typedData.domain.chainId, permit2Address: typedData.domain.verifyingContract, typedData, signature,
+        }),
         JSON.stringify(change, (_, field) => typeof field === 'bigint' ? field.toString() : field),
       ).resolves.toBe(false);
-      // Recovery disagreed, so the contract-wallet fallback was consulted rather than trusted locally.
-      expect(client.verifyTypedData).toHaveBeenCalledTimes(1);
     }
   });
 
@@ -162,7 +177,7 @@ describe('pinned Arc mainnet Universal Router PERMIT2_PERMIT sell', () => {
       { maxAmount: maxUint160 - 1n },
       { maxSigDeadline: deadline - 1n },
       { maxExpiration: expiration - 1n },
-      { minExpiration: expiration + 1n },
+      { minExpiration: expiration + 1n, maxExpiration: expiration + 2n },
       { nonce: 1n },
       { spender: arcUniversalRouterMainnet.contracts.permit2 },
     ]) {

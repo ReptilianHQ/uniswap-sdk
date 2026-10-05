@@ -128,6 +128,14 @@ describe('Universal Router deployment provenance', () => {
     });
   });
 
+  it('discloses that the pinned Arc router was built with a placeholder Across SpokePool', () => {
+    const record = JSON.parse(readFileSync(new URL('../provenance/arc-mainnet-v4.json', import.meta.url), 'utf8')) as {
+      contracts: { universalRouter: { spokePool: { address: string } } };
+    };
+    expect(getAddress(record.contracts.universalRouter.spokePool.address)).toBe(arcUniswapV4Mainnet.positionManagerWiring.wrappedNative);
+    expect(arcUniversalRouterMainnet.limitations.join(' ')).toContain(arcUniswapV4Mainnet.positionManagerWiring.wrappedNative);
+  });
+
   it('keeps Robinhood runtime, constructor, and wiring evidence aligned with the exported deployment', () => {
     const record = JSON.parse(
       readFileSync(new URL('../provenance/robinhood-mainnet-universal-router.json', import.meta.url), 'utf8'),

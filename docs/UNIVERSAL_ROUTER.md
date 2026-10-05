@@ -17,6 +17,13 @@ that record. Router source, retained-artifact and runtime provenance are in
 [ARC_V4_PROVENANCE.md](./ARC_V4_PROVENANCE.md) and `provenance/arc-mainnet-v4.json`. Pins are
 checked at block `20,889,496`.
 
+**Limitation:** according to the constructor parameters in the retained manifest, the pinned
+router was built with `spokePool = 0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f`, Arc's wrapped native.
+That is a placeholder, not an Across SpokePool, so `ACROSS_V4_DEPOSIT_V3` (0x40) is not usable
+through it. It is the same class of defect that ruled out Robinhood v2.1.1. It is accepted on Arc
+because swap and Permit2 commands are unaffected and the Argus SDK pins this router. The codec
+excludes 0x40 by default.
+
 `Uniswap/contracts` lists a v2.1.2 router (`0x8702463e73f74d0b6765aBceb314Ef07aCb92650`) as
 Arc's latest. It is known and deliberately not pinned. The Argus SDK manifest pins
 `0x4fcA…9Fb1`, and the mined `PERMIT2_PERMIT` sell below went through it.
@@ -36,11 +43,15 @@ at the block before and the block of the transaction. The transaction calls
 - the execute decoder recovers both commands and the deadline, and the `PERMIT2_PERMIT`
   decoder recovers the PermitSingle and 65-byte signature;
 - re-encoding reproduces the mined calldata byte for byte;
-- `buildPermitSingleTypedData` with those values on chain 5042 yields typed data under which
-  the mined signature recovers to the real sender. The signature fails for another owner,
-  or with any single domain or message field changed;
+- the sender had no code at that block, so Permit2 took its ecrecover branch. With the domain
+  bound to chain 5042 and canonical Permit2, `verifyPermitSingleSignature` accepts the mined
+  signature for the real sender, both from SDK-built typed data and from the decoded permit.
+  It rejects another owner, and rejects any single domain or message field changed;
 - the receipt's Permit2 `Permit` event and the before/after allowance reads match the decoded
   permit, and the permit consumed nonce 0.
+
+The mined permit is unlimited (2^160 − 1) for about 30 days. That was the operator's choice,
+recorded as evidence, not a recommendation; prefer an exact amount and a short expiration.
 
 ## Robinhood mainnet (4663)
 
@@ -72,8 +83,12 @@ it from becoming the pin.
 Command types follow `contracts/libraries/Commands.sol` at universal-router commit
 `999d561c3ad58fb5cab91b602911f3c75591a9c7`, the package commit Arc's router was built from.
 The command byte's high bit (0x80) is allow-revert; the low seven bits are the type.
-Placeholder slots are not modelled. A reviewer must list one in `permittedCommands` to
-accept it.
+Placeholder slots are not modelled. The default permitted set is
+`UNIVERSAL_ROUTER_DEFAULT_COMMANDS`, a swap-focused allowlist. Any other command must be
+listed in `permittedCommands`. A permitted `EXECUTE_SUB_PLAN` is decoded recursively under the
+same options, up to `UNIVERSAL_ROUTER_MAX_SUB_PLAN_DEPTH` (2), so its inner commands and
+allow-revert flags are checked like the outer plan's. Allow-revert can be permitted per
+command type, for example only on `PERMIT2_PERMIT`.
 
 Run `npm run test:live-compatibility` to recheck both routers against their public RPCs.
 `UNISWAP_ARC_RPC_URL` and `UNISWAP_MAINNET_RPC_URL` override the endpoints. Arc's endpoint is

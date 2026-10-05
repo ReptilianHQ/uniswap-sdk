@@ -1,9 +1,24 @@
 import type { Address, Hex, PublicClient } from 'viem';
-import { isHex, recoverTypedDataAddress, zeroAddress } from 'viem';
+import {
+  AbiDecodingDataSizeTooSmallError,
+  AbiDecodingZeroDataError,
+  BaseError,
+  ContractFunctionRevertedError,
+  ContractFunctionZeroDataError,
+  hashTypedData,
+  hexToBigInt,
+  hexToNumber,
+  isHex,
+  numberToHex,
+  recoverAddress,
+  serializeSignature,
+  sliceHex,
+  zeroAddress,
+} from 'viem';
 import { AllowanceTransfer, permit2Address } from './official-sdk.cjs';
 import { checkedAddress } from './pool.js';
 import { invalid, rpc, UniswapSdkError } from './errors.js';
-import { permit2Abi } from './abis.js';
+import { erc1271Abi, permit2Abi } from './abis.js';
 
 export type V4PermitBatchDetailInput = {
   token: Address;
@@ -126,8 +141,6 @@ export type PermitSingleTypedData = {
   message: PermitSingle;
 };
 
-// ERC-6492 wraps a counterfactual wallet's signature and ends it with this magic suffix.
-const ERC6492_MAGIC_SUFFIX = '6492649264926492649264926492649264926492649264926492649264926492';
 
 function uint(value: bigint, bits: 48n | 160n | 256n, label: string): bigint {
   if (typeof value !== 'bigint') invalid(`${label} must be a bigint`);
@@ -227,33 +240,79 @@ export function buildPermitSingleTypedData(input: {
   }
 }
 
-export type Permit2SignatureClient = Pick<PublicClient, 'verifyTypedData'>;
+export type Permit2SignatureClient = Pick<PublicClient, 'getChainId' | 'getCode' | 'readContract'>;
+
+export type VerifyPermitSingleSignatureInput = {
+  /** The account Permit2 will treat as signer: for `PERMIT2_PERMIT`, the transaction sender. */
+  owner: Address;
+  /** The chain the permit must be valid on; the client must be connected to it. */
+  chainId: number;
+  /** The Permit2 the permit must be valid for. Defaults to the canonical per-chain deployment. */
+  permit2Address?: Address;
+  signature: Hex;
+  /** Block for the owner-code read and any ERC-1271 call. Defaults to latest. */
+  blockNumber?: bigint;
+} & (
+  /** A permit decoded from calldata, e.g. `reviewPermit2PermitInput(...).permitSingle`. */
+  | { permitSingle: PermitSingle; typedData?: never }
+  /** Typed data from `buildPermitSingleTypedData`; its domain must equal `chainId` and Permit2. */
+  | { typedData: PermitSingleTypedData; permitSingle?: never }
+);
+
+const ERC1271_MAGIC_VALUE = '0x1626ba7e';
+// ERC-6492 wraps a counterfactual wallet's signature and ends it with this magic suffix.
+const ERC6492_MAGIC_SUFFIX = '6492649264926492649264926492649264926492649264926492649264926492';
+const HALF_WORD_MASK = (1n << 255n) - 1n;
 
 /**
- * Whether `signature` is `owner`'s valid Permit2 signature over `typedData`, judged as Permit2
- * itself would: the typed data is rebuilt from its domain and message through
- * `buildPermitSingleTypedData` first, so a caller-supplied `types` or `primaryType` can never
- * make a signature over some other struct pass.
+ * Whether Permit2 would accept `signature` as `owner`'s PermitSingle on `chainId`, following
+ * Permit2's `SignatureVerification`:
  *
- * An EOA signature is recovered locally with no RPC. Anything else, including a mismatch, an
- * ERC-1271 contract signature, or an ERC-6492 counterfactual-wallet signature, falls back to
- * the host client's `verifyTypedData`, which performs the on-chain checks. Returns `false` for
- * a well-formed signature by someone else; throws `INVALID_ARGUMENT` for malformed input and
- * `RPC_ERROR` when the fallback cannot be answered. This proves authorship only, not that the
- * nonce is current, the deadline is ahead, or the spender is the one the host intends.
+ * - an owner without code (an EOA) must produce a 65-byte signature with `v` of 27 or 28, or a
+ *   64-byte EIP-2098 compact signature, that ecrecovers to the owner. This is checked locally
+ *   once the owner's code has been read. `v` of 0 or 1 is rejected because Permit2 does not
+ *   normalize it;
+ * - an owner with code, including an EIP-7702-delegated EOA, must return the ERC-1271 magic
+ *   value from its own `isValidSignature`;
+ * - ERC-6492-wrapped signatures are rejected without any RPC. Permit2 never unwraps them, so a
+ *   counterfactual wallet's permit reverts on chain. This is stricter than Permit2 only for a
+ *   deployed wallet whose own `isValidSignature` happens to accept the wrapped bytes.
+ *
+ * The EIP-712 domain is always built from `chainId` and the expected Permit2, never taken from
+ * the caller, and supplied `typedData` whose domain differs is refused. The client must be on
+ * `chainId`. Owner code is read at `blockNumber`, while Permit2 checks it again at execution.
+ * Returns `false` for a signature Permit2 would reject. Throws `INVALID_ARGUMENT` for malformed
+ * input, `CHAIN_MISMATCH` for a client on another chain, and `RPC_ERROR` when the chain cannot
+ * answer. This proves acceptance only, not that the nonce is current, the deadline is ahead,
+ * or the spender is the one the host intends.
  */
 export async function verifyPermitSingleSignature(
   client: Permit2SignatureClient,
-  input: { owner: Address; typedData: PermitSingleTypedData; signature: Hex },
+  input: VerifyPermitSingleSignatureInput,
 ): Promise<boolean> {
   const owner = nonZeroAddress(input.owner, 'owner');
-  if (!isHex(input.signature, { strict: true }) || input.signature.length <= 2) invalid('signature must be nonempty hex');
-  const { domain, primaryType, message } = input.typedData;
-  if (primaryType !== 'PermitSingle') invalid('typedData must be a Permit2 PermitSingle');
-  if (domain?.name !== 'Permit2') invalid('typedData domain must be Permit2');
+  if (!Number.isSafeInteger(input.chainId) || input.chainId <= 0) invalid('chainId must be a positive safe integer');
+  const permit2 = nonZeroAddress(input.permit2Address ?? (permit2Address(input.chainId) as Address), 'permit2Address');
+  const { signature } = input;
+  if (!isHex(signature, { strict: true }) || signature.length <= 2 || signature.length % 2 !== 0) invalid('signature must be nonempty whole-byte hex');
+  if (input.blockNumber !== undefined && (typeof input.blockNumber !== 'bigint' || input.blockNumber < 0n)) {
+    invalid('blockNumber must be a nonnegative bigint');
+  }
+  if ((input.permitSingle === undefined) === (input.typedData === undefined)) invalid('Pass exactly one of permitSingle or typedData');
+  let message: PermitSingle;
+  if (input.typedData !== undefined) {
+    const { domain, primaryType } = input.typedData;
+    if (primaryType !== 'PermitSingle') invalid('typedData must be a Permit2 PermitSingle');
+    if (domain?.name !== 'Permit2') invalid('typedData domain must be Permit2');
+    if (domain.chainId !== input.chainId) invalid('typedData domain is for a different chain than expected');
+    if (checkedAddress(domain.verifyingContract) !== permit2) invalid('typedData domain names a different Permit2 than expected');
+    message = input.typedData.message;
+  } else {
+    message = input.permitSingle;
+  }
   const typedData = buildPermitSingleTypedData({
-    chainId: domain.chainId,
-    permit2Address: domain.verifyingContract,
+    chainId: input.chainId,
+    permit2Address: permit2,
     token: message.details.token,
     amount: message.details.amount,
     expiration: message.details.expiration,
@@ -261,16 +320,69 @@ export async function verifyPermitSingleSignature(
     spender: message.spender,
     sigDeadline: message.sigDeadline,
   });
+  const hash = hashTypedData(typedData);
+  if (signature.toLowerCase().endsWith(ERC6492_MAGIC_SUFFIX)) return false;
 
-  if (!input.signature.toLowerCase().endsWith(ERC6492_MAGIC_SUFFIX)) {
-    try {
-      const recovered = await recoverTypedDataAddress({ ...typedData, signature: input.signature });
-      if (recovered === owner) return true;
-    } catch {
-      // Not a recoverable ECDSA signature; it may still be a contract wallet's.
+  const code = await rpc(async () => {
+    const chainId = await client.getChainId();
+    if (chainId !== input.chainId) {
+      throw new UniswapSdkError('CHAIN_MISMATCH', 'RPC chain does not match the permit chain', {
+        path: 'chainId', expected: String(input.chainId), actual: String(chainId),
+      });
     }
+    return client.getCode({ address: owner, blockNumber: input.blockNumber });
+  });
+  if (code && code !== '0x') return erc1271Accepts(client, owner, hash, signature, input.blockNumber);
+  return ecrecoverAccepts(owner, hash, signature);
+}
+
+/** Permit2's EOA branch: 64- or 65-byte signatures only, `v` as given, ecrecover semantics. */
+async function ecrecoverAccepts(owner: Address, hash: Hex, signature: Hex): Promise<boolean> {
+  const length = (signature.length - 2) / 2;
+  let r: Hex;
+  let s: bigint;
+  let v: number;
+  if (length === 65) {
+    r = sliceHex(signature, 0, 32);
+    s = hexToBigInt(sliceHex(signature, 32, 64));
+    v = hexToNumber(sliceHex(signature, 64, 65));
+  } else if (length === 64) {
+    r = sliceHex(signature, 0, 32);
+    const vs = hexToBigInt(sliceHex(signature, 32, 64));
+    s = vs & HALF_WORD_MASK;
+    v = Number(vs >> 255n) + 27;
+  } else {
+    return false; // InvalidSignatureLength; this also covers ERC-6492-wrapped signatures.
   }
-  return rpc(() => client.verifyTypedData({ address: owner, ...typedData, signature: input.signature }));
+  if (v !== 27 && v !== 28) return false; // The ecrecover precompile returns address(0).
+  try {
+    const signer = await recoverAddress({
+      hash,
+      signature: serializeSignature({ r, s: numberToHex(s, { size: 32 }), yParity: v === 28 ? 1 : 0 }),
+    });
+    return signer === owner;
+  } catch {
+    return false; // Out-of-range r or s, or no curve point: ecrecover returns address(0).
+  }
+}
+
+/** Permit2's contract branch: the owner's own ERC-1271 `isValidSignature`, nothing else. */
+async function erc1271Accepts(client: Permit2SignatureClient, owner: Address, hash: Hex, signature: Hex, blockNumber?: bigint): Promise<boolean> {
+  try {
+    const magicValue = await client.readContract({
+      address: owner, abi: erc1271Abi, functionName: 'isValidSignature', args: [hash, signature], blockNumber,
+    });
+    return magicValue.toLowerCase() === ERC1271_MAGIC_VALUE;
+  } catch (cause) {
+    // A revert or unusable return value makes Permit2 revert too: not accepted.
+    if (cause instanceof BaseError && cause.walk(error => error instanceof ContractFunctionRevertedError
+      || error instanceof ContractFunctionZeroDataError
+      || error instanceof AbiDecodingZeroDataError
+      || error instanceof AbiDecodingDataSizeTooSmallError)) {
+      return false;
+    }
+    throw new UniswapSdkError('RPC_ERROR', 'ERC-1271 signature check failed', { cause });
+  }
 }
 
 export type Permit2AllowanceReadClient = Pick<PublicClient, 'getChainId' | 'getBlockNumber' | 'readContract'>;
@@ -294,6 +406,15 @@ export interface Permit2Allowance {
  * Reads `Permit2.allowance(owner, token, spender)` at one block. Returns the observation block
  * so a following `buildPermitSingleTypedData` can retain which state its nonce came from.
  * `chainId`, when given, must match the RPC; Permit2 defaults to the canonical per-chain address.
+ *
+ * The nonce is only a snapshot of the latest (or given) block:
+ * - two permits signed concurrently for the same owner, token, and spender read the same
+ *   nonce, and the second one to land reverts. Serialize signing per (owner, token, spender);
+ * - a submitted permit's signature is public. Anyone can send it to `Permit2.permit` first,
+ *   consuming the nonce so the router's `PERMIT2_PERMIT` reverts and takes the swap with it.
+ *   Encoding that command with allow-revert (`allowRevert: [PERMIT2_PERMIT]`) keeps the swap
+ *   running on the allowance the front-runner installed;
+ * - `lockdown` and `invalidateNonces` also move or revoke state between read and use.
  */
 export async function readPermit2Allowance(
   client: Permit2AllowanceReadClient,

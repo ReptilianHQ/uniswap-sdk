@@ -5,7 +5,7 @@ import {
 } from '@reptilianhq/uniswap-sdk/v4';
 import { isUniswapSdkError } from '@reptilianhq/uniswap-sdk/errors';
 import { getUniversalRouterDeployment } from '@reptilianhq/uniswap-sdk/deployments';
-import { buildPermitSingleTypedData } from '@reptilianhq/uniswap-sdk/permit2';
+import { buildPermitSingleTypedData, verifyPermitSingleSignature } from '@reptilianhq/uniswap-sdk/permit2';
 import {
   UNIVERSAL_ROUTER_COMMAND,
   encodePermit2PermitInput,
@@ -101,5 +101,20 @@ const reviewed = reviewPermit2PermitInput(plan.commands[0].input, {
   maxExpiration: plan.deadline,
 });
 assert.equal(reviewed.permitSingle.details.amount, 1_000n);
+
+// Signer check, bound to the router deployment's chain and Permit2. The placeholder signature
+// is not a valid ECDSA signature for this EOA owner, so Permit2 would reject it.
+const accepted = await verifyPermitSingleSignature({
+  async getChainId() { return router.chainId; },
+  async getCode() { return undefined; }, // the owner is an EOA at this block
+  async readContract() { throw new Error('fixture: an EOA owner is never asked for ERC-1271'); },
+}, {
+  owner: address(5),
+  chainId: router.chainId,
+  permit2Address: router.contracts.permit2,
+  permitSingle: reviewed.permitSingle,
+  signature: reviewed.signature,
+});
+assert.equal(accepted, false);
 
 console.log('Read-only consumer example passed.');

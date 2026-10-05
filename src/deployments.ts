@@ -292,6 +292,7 @@ export const arcUniversalRouterMainnet: UniversalRouterDeployment = deepFreeze({
   routerWiring: { poolManager: arcUniswapV4Mainnet.contracts.poolManager },
   limitations: [
     'Source and runtime provenance is the Arc v4 record (provenance/arc-mainnet-v4.json); Permit2 is a canonical-predeploy runtime pin only.',
+    'Per the retained Uniswap/contracts manifest, this router was constructed with spokePool 0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f, Arc\'s wrapped native: a placeholder, not an Across SpokePool. ACROSS_V4_DEPOSIT_V3 (0x40) is therefore not usable through it. This is the same class of defect that ruled out Robinhood v2.1.1; it is accepted here because swap and Permit2 commands are unaffected and the Argus SDK pins this router.',
     'Uniswap/contracts lists a v2.1.2 Universal Router (0x8702463e73f74d0b6765aBceb314Ef07aCb92650) as Arc\'s latest. It is known and deliberately not pinned: the Argus SDK manifest pins this router, and the mined PERMIT2_PERMIT evidence used it.',
   ],
 });

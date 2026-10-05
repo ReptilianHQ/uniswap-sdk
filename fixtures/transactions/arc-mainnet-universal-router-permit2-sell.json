@@ -4,7 +4,7 @@
   "chainId": 5042,
   "source": {
     "rpc": "https://rpc.mainnet.arc.io",
-    "method": "eth_getTransactionByHash + eth_getTransactionReceipt + Permit2.allowance eth_call"
+    "method": "eth_getTransactionByHash + eth_getTransactionReceipt + Permit2.allowance eth_call + eth_getCode(from)"
   },
   "recordedHead": 24322182,
   "minimumFinalityDepth": 5000,
@@ -124,5 +124,6 @@
       "expiration": "1793471651",
       "nonce": "1"
     }
-  }
+  },
+  "ownerCodeAtBlock": "0x"
 }

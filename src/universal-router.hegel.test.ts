@@ -5,6 +5,7 @@ import { bytesToHex, getAddress, pad, toHex, type Address, type Hex } from 'viem
 import { UniswapSdkError } from './errors.js';
 import {
   UNIVERSAL_ROUTER_COMMAND,
+  UNIVERSAL_ROUTER_DEFAULT_COMMANDS,
   decodePermit2PermitInput,
   decodeUniversalRouterExecute,
   encodePermit2PermitInput,
@@ -13,7 +14,8 @@ import {
 } from './universal-router.js';
 
 const SETTINGS = { testCases: 300, derandomize: true, database: hegel.Database.disabled } as const;
-const KNOWN = Object.values(UNIVERSAL_ROUTER_COMMAND);
+// Sub-plans carry structured inputs; they have their own property below.
+const FLAT = Object.values(UNIVERSAL_ROUTER_COMMAND).filter(command => command !== UNIVERSAL_ROUTER_COMMAND.EXECUTE_SUB_PLAN);
 const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT160 = (1n << 160n) - 1n;
 
@@ -36,13 +38,19 @@ function codeOf(action: () => unknown): string {
 describe('Universal Router codec properties', () => {
   it('round-trips every plan of known commands and their inputs exactly', () => {
     hegel.test((tc) => {
-      const commands = tc.draw(gs.arrays(gs.sampledFrom(KNOWN), { minSize: 1, maxSize: 8 }))
+      const commands = tc.draw(gs.arrays(gs.sampledFrom(FLAT), { minSize: 1, maxSize: 8 }))
         .map(command => ({ command, input: bytes(tc), allowRevert: tc.draw(gs.booleans()) }));
       const deadline = tc.draw(gs.bigIntegers({ minValue: 0n, maxValue: (1n << 256n) - 1n }));
-      const data = encodeUniversalRouterExecute({ commands, deadline }, { allowRevert: true });
-      expect(decodeUniversalRouterExecute(data, { allowRevert: true })).toEqual({ commands, deadline });
-      // Without the opt-in, any allow-revert flag fails closed.
-      expect(codeOf(() => decodeUniversalRouterExecute(data))).toBe(commands.some(entry => entry.allowRevert) ? 'CALLDATA_MISMATCH' : 'no error');
+      const everything = { permittedCommands: FLAT, allowRevert: true };
+      const data = encodeUniversalRouterExecute({ commands, deadline }, everything);
+      expect(decodeUniversalRouterExecute(data, everything)).toEqual({ commands, deadline });
+      // Default options fail closed on any allow-revert flag or any command outside the swap defaults.
+      const outsideDefaults = commands.some(entry => entry.allowRevert || !UNIVERSAL_ROUTER_DEFAULT_COMMANDS.includes(entry.command));
+      expect(codeOf(() => decodeUniversalRouterExecute(data))).toBe(outsideDefaults ? 'CALLDATA_MISMATCH' : 'no error');
+      // Allow-revert scoped to PERMIT2_PERMIT admits it there and nowhere else.
+      const scoped = { permittedCommands: FLAT, allowRevert: [UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT] };
+      const revertsElsewhere = commands.some(entry => entry.allowRevert && entry.command !== UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT);
+      expect(codeOf(() => decodeUniversalRouterExecute(data, scoped))).toBe(revertsElsewhere ? 'CALLDATA_MISMATCH' : 'no error');
     }, SETTINGS);
   });
 

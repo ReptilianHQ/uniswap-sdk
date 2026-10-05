@@ -14,5 +14,6 @@ export type {
   PermitSingle,
   PermitSingleDetails,
   PermitSingleTypedData,
+  VerifyPermitSingleSignatureInput,
 } from './permit2.js';
 export * from './universal-router.js';

@@ -107,10 +107,12 @@ and the router's `PERMIT2_PERMIT` command (0x0a) calls `Permit2.permit` before t
 no separate `Permit2.approve` transaction. The package builds and checks that material. The
 host signs, simulates and submits it.
 
+Building and signing:
+
 ```ts
 import { getUniversalRouterDeployment } from '@reptilianhq/uniswap-sdk/deployments';
 import { verifyUniversalRouterCompatibility } from '@reptilianhq/uniswap-sdk/compatibility';
-import { buildPermitSingleTypedData, readPermit2Allowance, verifyPermitSingleSignature } from '@reptilianhq/uniswap-sdk/permit2';
+import { buildPermitSingleTypedData, readPermit2Allowance } from '@reptilianhq/uniswap-sdk/permit2';
 import {
   UNIVERSAL_ROUTER_COMMAND,
   encodePermit2PermitInput,
@@ -122,35 +124,76 @@ await verifyUniversalRouterCompatibility(publicClient, router);
 const { nonce } = await readPermit2Allowance(publicClient, {
   owner, token, spender: router.contracts.universalRouter, chainId,
 });
+// Exact amount and a short expiration: permit overwrites the allowance, and anything left
+// over stays usable by any later router calldata this owner sends.
 const typedData = buildPermitSingleTypedData({
-  chainId, token, amount, expiration, nonce, spender: router.contracts.universalRouter, sigDeadline: deadline,
+  chainId, token, amount: amountIn, expiration: deadline, nonce,
+  spender: router.contracts.universalRouter, sigDeadline: deadline,
 });
 const signature = await wallet.signTypedData(typedData); // host-owned signer
-if (!await verifyPermitSingleSignature(publicClient, { owner, typedData, signature })) throw new Error('bad permit');
 const data = encodeUniversalRouterExecute({
   commands: [
-    { command: UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT, input: encodePermit2PermitInput(typedData.message, signature) },
+    { command: UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT, input: encodePermit2PermitInput(typedData.message, signature), allowRevert: true },
     { command: UNIVERSAL_ROUTER_COMMAND.V4_SWAP, input: v4SwapInput },
   ],
   deadline,
+}, { allowRevert: [UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT] });
+```
+
+Reviewing calldata someone else built (decode, review the permit, verify the signer):
+
+```ts
+import { verifyPermitSingleSignature } from '@reptilianhq/uniswap-sdk/permit2';
+import { decodeUniversalRouterExecute, reviewPermit2PermitInput } from '@reptilianhq/uniswap-sdk/universal-router';
+
+const plan = decodeUniversalRouterExecute(data, {
+  permittedCommands: [UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT, UNIVERSAL_ROUTER_COMMAND.V4_SWAP],
+  allowRevert: [UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT],
+});
+const { permitSingle, signature } = reviewPermit2PermitInput(plan.commands[0].input, {
+  token, spender: router.contracts.universalRouter,
+  minAmount: amountIn, maxAmount: amountIn,
+  maxSigDeadline: plan.deadline, maxExpiration: plan.deadline,
+});
+const accepted = await verifyPermitSingleSignature(publicClient, {
+  owner: sender, chainId: router.chainId, permit2Address: router.contracts.permit2, permitSingle, signature,
 });
 ```
 
 - `buildPermitSingleTypedData` takes its domain and types from `@uniswap/permit2-sdk`. It checks
   uint160 amount, uint48 expiration and nonce, uint256 `sigDeadline`, and nonzero token, spender
-  and Permit2. The result passes unchanged to viem `signTypedData`, `hashTypedData` and
-  `verifyTypedData`.
-- `verifyPermitSingleSignature` rebuilds the typed data from its domain and message before checking it.
-  It recovers EOA signatures locally. ERC-1271, ERC-6492 and every local mismatch fall back to
-  the client's `verifyTypedData`. It proves authorship only. Nonce freshness, deadlines and
-  spender choice remain host checks.
-- `decodeUniversalRouterExecute` accepts only the deadline overload. It rejects unknown or
-  placeholder commands and allow-revert flags unless the caller permits them
-  (`permittedCommands`, `allowRevert`). It also rejects calldata that does not re-encode byte for
-  byte. `reviewPermit2PermitInput` requires explicit token, spender, amount range, signature
-  deadline and expiration bounds, as the v4 position reviewers do for a folded `permitBatch`.
+  and Permit2. The result passes unchanged to viem `signTypedData` and `hashTypedData`.
+- `verifyPermitSingleSignature` follows Permit2's `SignatureVerification`, with the domain built
+  from the expected chain and Permit2 (supplied typed data with another domain is refused, as
+  is a client on another chain).
+  - An owner without code must give a 65-byte signature with `v` of 27 or 28, or a 64-byte
+    EIP-2098 signature, that ecrecovers to it; after one `getCode` read, this is checked
+    locally.
+  - An owner with code, including an EIP-7702-delegated EOA, is asked only through its own
+    ERC-1271 `isValidSignature`.
+  - ERC-6492-wrapped signatures are rejected because Permit2 does not unwrap them.
+  - It proves acceptance by Permit2, not nonce freshness, deadlines or spender choice.
+- `decodeUniversalRouterExecute` is a structural check, not a review. It accepts only the
+  deadline overload and canonical encodings. By default it admits only
+  `UNIVERSAL_ROUTER_DEFAULT_COMMANDS` (Permit2 permits, swaps, wrap/unwrap, `SWEEP`,
+  `PAY_PORTION`, `BALANCE_CHECK_ERC20`). `EXECUTE_SUB_PLAN`, `TRANSFER`, Permit2 transfers,
+  position-manager calls and `ACROSS_V4_DEPOSIT_V3` need an explicit opt-in. A permitted
+  sub-plan is decoded recursively under the same options, up to depth 2. Hosts reviewing
+  third-party calldata should always pass the exact `permittedCommands` their plan uses.
+- Allow-revert is rejected unless permitted, and it can be permitted per command. Allowing it
+  only on `PERMIT2_PERMIT` is the standard mitigation for front-running: anyone who sees the
+  signature can submit it to `Permit2.permit` first and consume the nonce. With the flag, the
+  swap still runs on the allowance that call installed.
+- `reviewPermit2PermitInput` validates every bound at runtime (`INVALID_ARGUMENT` when one is
+  missing or malformed) and then checks token, spender, amount range, signature deadline and
+  expiration. Expiration 0, which Permit2 treats as "this block", satisfies `minExpiration`.
   It does not check the signer.
-- The `PERMIT2_PERMIT` owner is the router's `msgSender()`, so the signer must send the transaction.
+- Nonces: `readPermit2Allowance` is a snapshot. Two permits signed concurrently for the same
+  owner, token and router reuse a nonce, and the second reverts, so serialize them.
+  `lockdown` and `invalidateNonces` also move state between read and use.
+- The `PERMIT2_PERMIT` owner is the router's `msgSender()`, so the signer must send the
+  transaction. The pinned Arc evidence signed an unlimited (2^160 − 1) allowance for about 30
+  days. That was the operator's choice, not a recommendation.
 
 Reviewed Universal Routers come from `universalRouterDeployments` through
 `getUniversalRouterDeployment(chainId)` or `findUniversalRouterDeploymentForNetwork(network)`.
@@ -159,6 +202,8 @@ mainnet (`robinhoodUniversalRouterMainnet`). Each record pins the router and Per
 hashes; Permit2's hash differs per chain because it caches a chain-specific domain separator.
 See [docs/UNIVERSAL_ROUTER.md](./docs/UNIVERSAL_ROUTER.md) for provenance, the pinned
 Arc mainnet evidence, and the newer or orphaned upstream routers that are deliberately not pinned.
+Arc's pinned router was built with a placeholder Across SpokePool, so `ACROSS_V4_DEPOSIT_V3`
+does not work through it.
 
 ## Observation and quote guarantees
 

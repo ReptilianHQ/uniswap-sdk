@@ -40,6 +40,10 @@ export const permit2Abi = parseAbi([
   'function allowance(address owner, address token, address spender) view returns (uint160 amount, uint48 expiration, uint48 nonce)',
   'event Permit(address indexed owner, address indexed token, address indexed spender, uint160 amount, uint48 expiration, uint48 nonce)',
 ]);
+// ERC-1271, which Permit2's SignatureVerification calls on any owner that has code.
+export const erc1271Abi = parseAbi([
+  'function isValidSignature(bytes32 hash, bytes signature) view returns (bytes4 magicValue)',
+]);
 // Universal Router 2.x: only the deadline-bearing `execute` overload is modelled, so
 // calldata without an explicit deadline is rejected rather than decoded.
 export const universalRouterAbi = parseAbi([
