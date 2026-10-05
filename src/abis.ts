@@ -33,4 +33,22 @@ export const v4PositionManagerAbi = parseAbi([
   'function permitBatch(address owner, AllowanceTransferPermitBatch permitBatch, bytes signature) payable returns (bytes err)',
 ]);
 
+// Canonical Permit2 AllowanceTransfer surface: the allowance read and the event its
+// `permit` emits. Permit2 caches its EIP-712 domain separator per chain, so the same
+// address carries a different runtime hash on every chain; see the reviewed pins.
+export const permit2Abi = parseAbi([
+  'function allowance(address owner, address token, address spender) view returns (uint160 amount, uint48 expiration, uint48 nonce)',
+  'event Permit(address indexed owner, address indexed token, address indexed spender, uint160 amount, uint48 expiration, uint48 nonce)',
+]);
+// ERC-1271, which Permit2's SignatureVerification calls on any owner that has code.
+export const erc1271Abi = parseAbi([
+  'function isValidSignature(bytes32 hash, bytes signature) view returns (bytes4 magicValue)',
+]);
+// Universal Router 2.x: only the deadline-bearing `execute` overload is modelled, so
+// calldata without an explicit deadline is rejected rather than decoded.
+export const universalRouterAbi = parseAbi([
+  'function poolManager() view returns (address)',
+  'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable',
+]);
+
 export * from './v3-abis.js';

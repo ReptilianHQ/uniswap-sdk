@@ -79,7 +79,12 @@
       "deploymentTransaction": "0xf07bb4c6eaccb5b7e128625b0c4fc6bc79f727f9b647a6e81a886bde905345b8",
       "generatedInitcodeHash": "0x8f564cfb262952d7d24e1750426672ccf3a72ca9268e2ec6d97cf846eaae179c",
       "deploymentManifestInputHash": "0xe388b0b5ed9c81077f8fcd9a1724fb35b2c5792380dddd3a19fd02f5bc037f77",
-      "proxy": false
+      "proxy": false,
+      "spokePool": {
+        "address": "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f",
+        "source": "constructor parameters in the retained official deployment manifest",
+        "assessment": "placeholder: the address is Arc's wrapped native, not an Across SpokePool, so ACROSS_V4_DEPOSIT_V3 (0x40) is not usable through this router"
+      }
     },
     "permit2": {
       "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
@@ -106,6 +111,7 @@
     "deploymentManifestInputHash retains the upstream manifest field named initcodeHash; Uniswap/contracts computes it from the deployment transaction input, so it is kept distinct from generatedInitcodeHash.",
     "Permit2 is an exact runtime pin of the canonical Arc predeploy, not a deployment produced by the retained Uniswap/contracts manifest.",
     "This record does not establish Argus launcher-contract source equivalence or hook, fee, custody, payout, or locked-principal compatibility.",
-    "The V4Quoter is retained as official infrastructure, but hook-aware Argus quotes and writes require exact-router simulation with the actual sender."
+    "The V4Quoter is retained as official infrastructure, but hook-aware Argus quotes and writes require exact-router simulation with the actual sender.",
+    "The Universal Router's constructor spokePool is Arc's wrapped native (a placeholder), so ACROSS_V4_DEPOSIT_V3 is not usable through it. Swap and Permit2 commands are unaffected."
   ]
 }

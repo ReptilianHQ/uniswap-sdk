@@ -3,13 +3,18 @@ import { createRequire } from 'node:module';
 import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
 import {
+  arcUniversalRouterMainnet,
   arcUniswapV4Mainnet,
+  findUniversalRouterDeploymentForNetwork,
   findUniswapV3DeploymentForNetwork,
+  getUniversalRouterDeployment,
   findUniswapV4DeploymentForNetwork,
   getUniswapV3Deployment,
   getUniswapV4Deployment,
   robinhoodUniswapV3Mainnet,
   robinhoodUniswapV3Testnet,
+  robinhoodUniversalRouterMainnet,
+  universalRouterDeployments,
   uniswapV3Deployments,
   uniswapV4Deployments,
 } from './deployments.js';
@@ -108,6 +113,65 @@ describe('Arc Uniswap v4 deployment provenance', () => {
   });
 });
 
+describe('Universal Router deployment provenance', () => {
+  it('derives Arc from the reviewed v4 record so the two pins cannot drift apart', () => {
+    expect(arcUniversalRouterMainnet).toMatchObject({
+      chainId: arcUniswapV4Mainnet.chainId,
+      network: arcUniswapV4Mainnet.network,
+      referenceBlock: arcUniswapV4Mainnet.referenceBlock,
+      contracts: { universalRouter: arcUniswapV4Mainnet.contracts.universalRouter, permit2: arcUniswapV4Mainnet.contracts.permit2 },
+      runtimeCodeHashes: {
+        universalRouter: arcUniswapV4Mainnet.runtimeCodeHashes.universalRouter,
+        permit2: arcUniswapV4Mainnet.runtimeCodeHashes.permit2,
+      },
+      routerWiring: { poolManager: arcUniswapV4Mainnet.contracts.poolManager },
+    });
+  });
+
+  it('discloses that the pinned Arc router was built with a placeholder Across SpokePool', () => {
+    const record = JSON.parse(readFileSync(new URL('../provenance/arc-mainnet-v4.json', import.meta.url), 'utf8')) as {
+      contracts: { universalRouter: { spokePool: { address: string } } };
+    };
+    expect(getAddress(record.contracts.universalRouter.spokePool.address)).toBe(arcUniswapV4Mainnet.positionManagerWiring.wrappedNative);
+    expect(arcUniversalRouterMainnet.limitations.join(' ')).toContain(arcUniswapV4Mainnet.positionManagerWiring.wrappedNative);
+  });
+
+  it('keeps Robinhood runtime, constructor, and wiring evidence aligned with the exported deployment', () => {
+    const record = JSON.parse(
+      readFileSync(new URL('../provenance/robinhood-mainnet-universal-router.json', import.meta.url), 'utf8'),
+    ) as {
+      deploymentId: string; chainId: number; network: string;
+      contracts: Record<string, { address: string; runtimeCodeHash: string; constructorParameters?: Record<string, string> }>;
+      routerWiring: Record<string, string>;
+    };
+    const deployment = robinhoodUniversalRouterMainnet;
+    expect(record).toMatchObject({ deploymentId: deployment.id, chainId: deployment.chainId, network: deployment.network });
+    expect(Object.keys(record.contracts).sort()).toEqual(Object.keys(deployment.contracts).sort());
+    for (const [name, address] of Object.entries(deployment.contracts)) {
+      expect(getAddress(record.contracts[name].address)).toBe(address);
+      expect(record.contracts[name].runtimeCodeHash).toBe(deployment.runtimeCodeHashes[name as keyof typeof deployment.contracts]);
+    }
+    const constructor = record.contracts.universalRouter.constructorParameters!;
+    expect(getAddress(constructor.permit2)).toBe(deployment.contracts.permit2);
+    expect(getAddress(constructor.v4PoolManager)).toBe(deployment.routerWiring.poolManager);
+    expect(getAddress(record.routerWiring.poolManager)).toBe(deployment.routerWiring.poolManager);
+    // The router was built against the same v3 factory and wrapped native the v3 pin reviews.
+    expect(getAddress(constructor.v3Factory)).toBe(robinhoodUniswapV3Mainnet.contracts.factory);
+    expect(getAddress(constructor.weth9)).toBe(robinhoodUniswapV3Mainnet.contracts.wrappedNative);
+    expect(getAddress(constructor.v3NFTPositionManager)).toBe(robinhoodUniswapV3Mainnet.contracts.nonfungiblePositionManager);
+    // The upstream-orphaned v2.1.1 router (placeholder Across SpokePool) must never be the pin.
+    expect(deployment.contracts.universalRouter).not.toBe(getAddress('0x8876789976dEcBfCbBbe364623C63652db8C0904'));
+    expect(getAddress(constructor.spokePool)).not.toBe(getAddress('0x7332D11BD10d18A04B119Cd4671a96f3148002c4'));
+  });
+
+  it('pins one canonical Permit2 address but a distinct runtime per chain', () => {
+    const permit2 = new Set(universalRouterDeployments.map(deployment => deployment.contracts.permit2));
+    expect([...permit2]).toEqual(['0x000000000022D473030F116dDEE9F6B43aC78BA3']);
+    const hashes = new Set(universalRouterDeployments.map(deployment => deployment.runtimeCodeHashes.permit2));
+    expect(hashes.size).toBe(universalRouterDeployments.length);
+  });
+});
+
 describe('reviewed deployment tables', () => {
   it('resolves every reviewed deployment by chain and network, and nothing else', () => {
     // Non-empty, so the upstream comparisons below cannot pass by checking nothing.
@@ -121,6 +185,13 @@ describe('reviewed deployment tables', () => {
       expect(getUniswapV4Deployment(deployment.chainId)).toBe(deployment);
       expect(findUniswapV4DeploymentForNetwork(deployment.network)).toBe(deployment);
     }
+    expect(universalRouterDeployments.length).toBeGreaterThan(0);
+    for (const deployment of universalRouterDeployments) {
+      expect(getUniversalRouterDeployment(deployment.chainId)).toBe(deployment);
+      expect(findUniversalRouterDeploymentForNetwork(deployment.network)).toBe(deployment);
+    }
+    expect(() => getUniversalRouterDeployment(1)).toThrow(expect.objectContaining({ code: 'CHAIN_MISMATCH' }));
+    expect(findUniversalRouterDeploymentForNetwork('__proto__')).toBeUndefined();
     expect(() => getUniswapV4Deployment(1)).toThrow(expect.objectContaining({ code: 'CHAIN_MISMATCH' }));
     expect(() => getUniswapV3Deployment(1)).toThrow(expect.objectContaining({ code: 'CHAIN_MISMATCH' }));
     expect(findUniswapV3DeploymentForNetwork('ethereum-mainnet')).toBeUndefined();

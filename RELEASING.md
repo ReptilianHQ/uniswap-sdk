@@ -60,8 +60,9 @@ the public package subpaths, publisher checksum and tests,
 packed export lint, and packed ESM/type resolution. The published scope includes
 v4 observations and provider plans plus v3/v4 reviewed deployments, exact runtime
 code hashes, unsigned position mint/increase/removal construction, calldata review, compatibility
-checks, pinned receipt evidence, and a self-hash-checked copy of the shared SDK
-conformance rules. Run `npm run test:fork` separately with archive-capable
+checks, pinned receipt evidence, Permit2 `PermitSingle` typed data and signature
+verification, the Universal Router command codec with its pinned Arc mainnet transaction,
+and a self-hash-checked copy of the shared SDK conformance rules. Run `npm run test:fork` separately with archive-capable
 `SDK_FORK_EIP155_4663_RPC_URL` and `SDK_FORK_EIP155_5042_RPC_URL` endpoints. The
 Robinhood suite simulates and executes the reviewed v3 close path and requires
 receipt amounts to match the simulation. The Arc suite verifies the pinned
@@ -69,7 +70,7 @@ deployment, then executes the SDK-built and independently reviewed unhooked v4
 mint, increase, partial-removal, and atomic-close lifecycle on Anvil using two
 ordinary ERC-20s. It neither broadcasts nor addresses launcher-locked LP. Run
 `npm run test:live-compatibility` before release to
-recheck all three deployment records. Runtime code identity is not source verification or
+recheck all three deployment records and both reviewed Universal Routers. Runtime code identity is not source verification or
 custom-hook compatibility. Arc's shared Uniswap deployment is runtime-pinned and its
 official manifest plus retained generated artifacts are reproducible as documented in
 `docs/ARC_V4_PROVENANCE.md`; this is not a fresh source compilation and does not establish

@@ -4,6 +4,15 @@ import {
   readV4TickWindow,
 } from '@reptilianhq/uniswap-sdk/v4';
 import { isUniswapSdkError } from '@reptilianhq/uniswap-sdk/errors';
+import { getUniversalRouterDeployment } from '@reptilianhq/uniswap-sdk/deployments';
+import { buildPermitSingleTypedData, verifyPermitSingleSignature } from '@reptilianhq/uniswap-sdk/permit2';
+import {
+  UNIVERSAL_ROUTER_COMMAND,
+  encodePermit2PermitInput,
+  encodeUniversalRouterExecute,
+  reviewPermit2PermitInput,
+  decodeUniversalRouterExecute,
+} from '@reptilianhq/uniswap-sdk/universal-router';
 
 const address = number => `0x${number.toString(16).padStart(40, '0')}`;
 const deployment = {
@@ -55,5 +64,57 @@ try {
   assert.equal(isUniswapSdkError(error), true);
   assert.equal(error.code, 'CHAIN_MISMATCH');
 }
+
+// Fold a router allowance into a Universal Router swap as a signed PermitSingle. The host's
+// wallet signs `typedData`; this package never sees a key. The signature here is a placeholder.
+const router = getUniversalRouterDeployment(5042);
+const deadline = 1_790_881_451n;
+const typedData = buildPermitSingleTypedData({
+  chainId: router.chainId,
+  token: address(4),
+  amount: 1_000n,
+  expiration: deadline,
+  nonce: 0n, // read the current nonce with readPermit2Allowance
+  spender: router.contracts.universalRouter,
+  sigDeadline: deadline,
+});
+const signature = `0x${'11'.repeat(65)}`;
+const data = encodeUniversalRouterExecute({
+  commands: [
+    { command: UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT, input: encodePermit2PermitInput(typedData.message, signature) },
+    { command: UNIVERSAL_ROUTER_COMMAND.V4_SWAP, input: '0x' /* v4 swap actions */ },
+  ],
+  deadline,
+});
+
+// A reviewer that did not build the calldata checks it before anyone signs the transaction.
+const plan = decodeUniversalRouterExecute(data, {
+  permittedCommands: [UNIVERSAL_ROUTER_COMMAND.PERMIT2_PERMIT, UNIVERSAL_ROUTER_COMMAND.V4_SWAP],
+});
+assert.equal(plan.deadline, deadline);
+const reviewed = reviewPermit2PermitInput(plan.commands[0].input, {
+  token: address(4),
+  spender: router.contracts.universalRouter,
+  minAmount: 1_000n,
+  maxAmount: 1_000n,
+  maxSigDeadline: plan.deadline,
+  maxExpiration: plan.deadline,
+});
+assert.equal(reviewed.permitSingle.details.amount, 1_000n);
+
+// Signer check, bound to the router deployment's chain and Permit2. The placeholder signature
+// is not a valid ECDSA signature for this EOA owner, so Permit2 would reject it.
+const accepted = await verifyPermitSingleSignature({
+  async getChainId() { return router.chainId; },
+  async getCode() { return undefined; }, // the owner is an EOA at this block
+  async call() { throw new Error('fixture: an EOA owner is never asked for ERC-1271'); },
+}, {
+  owner: address(5),
+  chainId: router.chainId,
+  permit2Address: router.contracts.permit2,
+  permitSingle: reviewed.permitSingle,
+  signature: reviewed.signature,
+});
+assert.equal(accepted, false);
 
 console.log('Read-only consumer example passed.');

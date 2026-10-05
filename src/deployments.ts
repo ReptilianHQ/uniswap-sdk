@@ -240,6 +240,101 @@ export const arcUniswapV4Mainnet: UniswapV4Deployment = deepFreeze({
   ],
 });
 
+export type UniversalRouterDeploymentId = 'arc-mainnet-universal-router' | 'robinhood-mainnet-universal-router';
+export type UniversalRouterNetwork = 'arc-mainnet' | 'robinhood-chain-mainnet';
+export type UniversalRouterChainId = 5_042 | 4_663;
+
+export interface UniversalRouterContracts {
+  universalRouter: Address;
+  permit2: Address;
+}
+
+export type UniversalRouterContractName = keyof UniversalRouterContracts;
+
+/**
+ * A reviewed Universal Router and the Permit2 it pulls through, pinned by exact runtime code
+ * hash. Permit2 shares one address on these chains but caches its chain-specific EIP-712
+ * domain separator as an immutable, so each chain has its own Permit2 runtime hash.
+ */
+export interface UniversalRouterDeployment {
+  id: UniversalRouterDeploymentId;
+  chainId: UniversalRouterChainId;
+  network: UniversalRouterNetwork;
+  reviewedAt: string;
+  /**
+   * The block whose hash and runtime bytes the pins were taken at. Absent where the reviewed
+   * public RPC serves no historical state; verification then reads the latest block, as the
+   * v3 deployments do.
+   */
+  referenceBlock?: Readonly<{ number: bigint; hash: Hex }>;
+  contracts: Readonly<UniversalRouterContracts>;
+  runtimeCodeHashes: Readonly<Record<UniversalRouterContractName, Hex>>;
+  /** The v4 PoolManager the router's `poolManager()` immutable must name. */
+  routerWiring: Readonly<{ poolManager: Address }>;
+  limitations: readonly string[];
+}
+
+/** Arc's router, derived from the reviewed v4 record so the two pins cannot drift apart. */
+export const arcUniversalRouterMainnet: UniversalRouterDeployment = deepFreeze({
+  id: 'arc-mainnet-universal-router',
+  chainId: arcUniswapV4Mainnet.chainId,
+  network: arcUniswapV4Mainnet.network,
+  reviewedAt: '2026-10-04',
+  referenceBlock: { ...arcUniswapV4Mainnet.referenceBlock },
+  contracts: {
+    universalRouter: arcUniswapV4Mainnet.contracts.universalRouter,
+    permit2: arcUniswapV4Mainnet.contracts.permit2,
+  },
+  runtimeCodeHashes: {
+    universalRouter: arcUniswapV4Mainnet.runtimeCodeHashes.universalRouter,
+    permit2: arcUniswapV4Mainnet.runtimeCodeHashes.permit2,
+  },
+  routerWiring: { poolManager: arcUniswapV4Mainnet.contracts.poolManager },
+  limitations: [
+    'Source and runtime provenance is the Arc v4 record (provenance/arc-mainnet-v4.json); Permit2 is a canonical-predeploy runtime pin only.',
+    'Per the retained Uniswap/contracts manifest, this router was constructed with spokePool 0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f, Arc\'s wrapped native: a placeholder, not an Across SpokePool. ACROSS_V4_DEPOSIT_V3 (0x40) is therefore not usable through it. This is the same class of defect that ruled out Robinhood v2.1.1; it is accepted here because swap and Permit2 commands are unaffected and the Argus SDK pins this router.',
+    'Uniswap/contracts lists a v2.1.2 Universal Router (0x8702463e73f74d0b6765aBceb314Ef07aCb92650) as Arc\'s latest. It is known and deliberately not pinned: the Argus SDK manifest pins this router, and the mined PERMIT2_PERMIT evidence used it.',
+  ],
+});
+
+export const robinhoodUniversalRouterMainnet: UniversalRouterDeployment = deepFreeze({
+  id: 'robinhood-mainnet-universal-router',
+  chainId: 4_663,
+  network: 'robinhood-chain-mainnet',
+  reviewedAt: '2026-10-04',
+  contracts: {
+    universalRouter: getAddress('0x204FAca1764B154221e35c0d20aBb3c525710498'),
+    permit2: getAddress('0x000000000022D473030F116dDEE9F6B43aC78BA3'),
+  },
+  runtimeCodeHashes: {
+    universalRouter: '0x76b92a5bba2dd32019a64eb421f1750e78c6ba044dbfa6840b722eb5ac63d296',
+    permit2: '0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca',
+  },
+  routerWiring: { poolManager: getAddress('0x8366a39CC670B4001A1121B8F6A443A643e40951') },
+  limitations: [
+    'This is the Uniswap/contracts manifest\'s latest Robinhood Universal Router (v2.1.2), wired to the production Across SpokePool.',
+    'The earlier v2.1.1 router 0x8876789976dEcBfCbBbe364623C63652db8C0904 is labelled orphaned upstream (its Across SpokePool is the UnsupportedProtocol placeholder) and is deliberately not pinned.',
+    'The public Robinhood RPC serves no historical state, so runtime hashes are verified at the latest block.',
+  ],
+});
+
+/** Every reviewed Universal Router. Addresses are pinned here, not read from upstream. */
+export const universalRouterDeployments: readonly UniversalRouterDeployment[] = Object.freeze([
+  arcUniversalRouterMainnet,
+  robinhoodUniversalRouterMainnet,
+]);
+
+export function getUniversalRouterDeployment(chainId: number): UniversalRouterDeployment {
+  const deployment = universalRouterDeployments.find(candidate => candidate.chainId === chainId);
+  if (!deployment) throw new UniswapSdkError('CHAIN_MISMATCH', `No reviewed Universal Router deployment for chain ID ${chainId}`);
+  return deployment;
+}
+
+/** The reviewed Universal Router for a network key, or undefined when the network has none. */
+export function findUniversalRouterDeploymentForNetwork(network: string): UniversalRouterDeployment | undefined {
+  return universalRouterDeployments.find(candidate => candidate.network === network);
+}
+
 /** Every reviewed Uniswap v3 deployment. Addresses are pinned here, not read from upstream. */
 export const uniswapV3Deployments: readonly UniswapV3Deployment[] = Object.freeze([
   robinhoodUniswapV3Mainnet,
