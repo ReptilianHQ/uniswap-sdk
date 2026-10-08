@@ -1,6 +1,6 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
   "license": "MIT",
   "type": "module",
@@ -86,7 +86,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "npm run build && npm run typecheck && npm run lint && npm run test:run && npm run test:runtime && npm run test:consumer && npm run check:conformance && npm run check:publisher && npm run test:release && npm run check:package",
+    "check": "npm run build && npm run typecheck && npm run test:types && npm run lint && npm run test:run && npm run test:runtime && npm run test:consumer && npm run check:conformance && npm run check:publisher && npm run test:release && npm run check:package",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test:run": "vitest run src",
@@ -98,7 +98,8 @@
     "check:publisher": "node scripts/artifacts/check.mjs",
     "test:release": "node --test scripts/artifacts/publisher.test.mjs scripts/release.test.mjs",
     "check:package": "publint && attw --pack . --profile esm-only",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:types": "tsc -p examples/types/tsconfig.json && tsc -p examples/types/tsconfig.non-strict-nulls.json"
   },
   "dependencies": {
     "@uniswap/permit2-sdk": "1.4.0",
