@@ -1,7 +1,7 @@
 # Uniswap SDK releases
 
 This repository owns `@reptilianhq/uniswap-sdk`. Publish to the public npm
-registry using the same Reptilian artifact publisher 1.2.2 used by the other
+registry using the same Reptilian artifact publisher 1.2.4 used by the other
 standalone package owners. `scripts/artifacts/publisher.lock.json` pins the
 canonical publisher bytes; update them from the Reptilian root's vendor command.
 Do not edit the emitted publisher locally.
