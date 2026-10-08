@@ -270,6 +270,11 @@ npm ci --ignore-scripts
 npm run check
 ```
 
+`npm run test:types` compiles the public v4 read API against real chainless and
+chain-bound viem clients with strict null checking both enabled and disabled.
+The read-client interface retains ABI-typed simulation results without requiring
+unused chain/account-dependent transaction-request metadata.
+
 The local suite uses real viem ABI encoding/decoding over a deterministic RPC
 transport, plus official SDK identity comparisons, Hegel property invariants,
 pinned finalized Robinhood mainnet receipt fixtures, and a pinned finalized Arc mainnet
