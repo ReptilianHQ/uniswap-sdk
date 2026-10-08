@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "1.2.4",
+  "version": "1.2.5",
   "source": "ReptilianHQ/reptilian:scripts/artifacts",
   "files": {
-    "publisher.mjs": "4c63dd7d011299ce30a42e86cc84b93be6b597c19580e9d6c4f7a99208c92dd9",
-    "publisher.test.mjs": "16c821fddd289b89f2c7b96579df4f5931163dcbc817b0263e88233023e1ae4c",
-    "check.mjs": "ffb7efb74a8fb46026dc233ebf71d79295d0d3c5dc1e2172d46b1d476d26e4fd"
+    "publisher.mjs": "6a0a3390eb4dc228b2a950ae3aade28405f9fbf63e8298c8ecba976f427ba841",
+    "publisher.test.mjs": "0e7ede217193eb87579b804f9a57636c9b649782c26d934abe37e684e76a5d4f",
+    "check.mjs": "dbf5de7cca3927fe7d36d6bbb191168ebc4791fd9a890d17527216514e818cec"
   }
 }
