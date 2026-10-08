@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, assertDownloaded, integrity, publishRelease, VERIFY_ATTEMPTS, VERIFY_INTERVAL_MS, registryDownload, registryLookup } from './publisher.mjs';
+import { PUBLISHER_VERSION, validateGroup, loadConfig, prepare, validateRecord, assertPublished, assertDownloaded, integrity, publishRelease, VERIFY_ATTEMPTS, VERIFY_INTERVAL_MS, registryDownload, registryLookup, publishArchive } from './publisher.mjs';
 const group = { id: 'consumer-contract', tagPrefix: 'consumer-v', registry: 'https://registry.npmjs.org', access: 'public', channels: ['latest'], pack: 'npm', packages: [{ name: '@example/consumer', path: 'packages/consumer' }] };
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 function fixture(run) {
@@ -90,6 +90,86 @@ const stagedFixture = () => {
   return { bytes, pkg, record, exact };
 };
 const rejectedPublish = () => { throw new Error('409 Cannot publish over previously staged version'); };
+test('accepted publication waits beyond the old window for both exact bytes and the channel', async () => {
+  const { record, bytes, exact } = fixture(({ root }) => {
+    const output = join(root, 'accepted');
+    const record = prepare(group, output, root);
+    const pkg = record.packages[0];
+    return { record, bytes: readFileSync(join(output, pkg.filename)), exact: {
+      name: pkg.name, version: pkg.version, dist: { integrity: pkg.integrity }, reptilianRelease: pkg.reptilianRelease,
+    } };
+  });
+  let elapsed = 0;
+  let publishes = 0;
+  let downloads = 0;
+  await publishRelease(record, {
+    lookup: spec => elapsed >= (spec.endsWith('@latest') ? 420_000 : 300_000) ? exact : null,
+    publish: () => { publishes++; }, tag: () => assert.fail('No channel repair is authorized'),
+    download: () => { downloads++; return bytes; }, wait: async () => { elapsed += VERIFY_INTERVAL_MS; },
+  });
+  assert.equal(elapsed, 420_000);
+  assert.equal(publishes, 1);
+  assert.equal(downloads, 1); // Real tarball identity and integrity checks run after visibility.
+});
+test('accepted publication exhausts a bounded ten-minute visibility window without success', async () => {
+  const { bytes, record } = stagedFixture();
+  let elapsed = 0;
+  let publishes = 0;
+  let downloads = 0;
+  await assert.rejects(publishRelease(record, {
+    lookup: () => null, publish: () => { publishes++; }, tag: () => assert.fail('No channel repair'),
+    download: () => { downloads++; return bytes; }, wait: async () => { elapsed += VERIFY_INTERVAL_MS; },
+  }), /Registry verification failed/);
+  assert.equal(elapsed, 600_000);
+  assert.equal(publishes, 1);
+  assert.equal(downloads, 0);
+});
+for (const code of ['E401', 'E403', 'ENEEDAUTH', 'EOTP']) {
+  for (const format of ['structured', 'npm-stderr', 'legacy-npm-stdout']) {
+    test(`${code} publication rejection (${format}) fails before visibility polling`, async () => {
+      const { record } = stagedFixture();
+      const failure = Object.assign(new Error('publish rejected'), format === 'structured' ? { code }
+        : format === 'npm-stderr' ? { stderr: Buffer.from(`npm error code ${code}\n`) }
+          : { stdout: `npm ERR! code ${code}\n` });
+      let reads = 0;
+      let publishes = 0;
+      await assert.rejects(publishRelease(record, {
+        lookup: () => { reads++; return null; }, publish: () => { publishes++; throw failure; },
+        tag: () => assert.fail('No channel repair'), download: () => assert.fail('No download'),
+        wait: async () => assert.fail('Authentication errors must not wait'),
+      }), error => error === failure);
+      assert.equal(reads, 2); // Preflight only.
+      assert.equal(publishes, 1);
+    });
+  }
+}
+test('npm subprocess authentication diagnostics reach the fast-failure boundary', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'publisher-auth-command-'));
+  const previousPath = process.env.PATH;
+  try {
+    writeFileSync(join(directory, 'npm'), `#!${process.execPath}
+import assert from 'node:assert/strict';
+const args = process.argv.slice(2);
+assert.equal(args[0], 'publish');
+assert.ok(args.includes('--ignore-scripts'));
+assert.ok(args.includes('https://registry.npmjs.org'));
+process.stderr.write('npm error code E401\\n');
+process.exit(1);
+`, { mode: 0o755 });
+    process.env.PATH = `${directory}:${previousPath}`;
+    const { record } = stagedFixture();
+    let failure;
+    await assert.rejects(publishRelease(record, {
+      lookup: () => null,
+      publish: (pkg, release) => {
+        try { publishArchive({ ...pkg, filename: 'archive.tgz' }, { ...release, access: 'public' }, directory); }
+        catch (error) { failure = error; throw error; }
+      },
+      tag: () => assert.fail('No repair'), download: () => assert.fail('No download'),
+      wait: async () => assert.fail('Must not wait after real npm auth rejection'),
+    }), error => error === failure && /npm error code E401/.test(error.stderr));
+  } finally { process.env.PATH = previousPath; rmSync(directory, { recursive: true, force: true }); }
+});
 test('a rejected publish of a still-staged version succeeds once the reviewed bytes appear', async () => {
   const { bytes, record, exact } = stagedFixture();
   let waits = 0;
@@ -110,7 +190,7 @@ test('a rejected publish whose bytes never appear rethrows the publish error aft
     lookup: () => null, publish: rejectedPublish, tag: () => {}, download: () => bytes, wait: async () => { waits++; },
   }), /409 Cannot publish/);
   assert.equal(waits, VERIFY_ATTEMPTS - 1);
-  assert.ok(VERIFY_ATTEMPTS * VERIFY_INTERVAL_MS >= 240_000, 'verify window must outlast npm staging');
+  assert.equal((VERIFY_ATTEMPTS - 1) * VERIFY_INTERVAL_MS, 600_000, 'staged conflict waits remain bounded');
 });
 test('a rejected publish still rejects when the version that appears has different bytes', async () => {
   const { bytes, pkg, record } = stagedFixture();

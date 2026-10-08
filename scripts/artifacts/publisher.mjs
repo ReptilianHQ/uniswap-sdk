@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const PUBLISHER_VERSION = '1.2.3';
+export const PUBLISHER_VERSION = '1.2.4';
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const run = (cmd, args, cwd = process.cwd()) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 const safePath = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes('\\') && !value.split('/').includes('..');
@@ -129,9 +129,27 @@ export function registryDownload(spec, registry) {
     return readFileSync(join(staging, packed.filename));
   } finally { rmSync(staging, { recursive: true, force: true }); }
 }
-// npm stages a publish and can take minutes to expose it, so verification must outlast that window.
-export const VERIFY_ATTEMPTS = 24;
+// One immediate check plus sixty ten-second waits allows ten minutes for staging.
+export const VERIFY_ATTEMPTS = 61;
 export const VERIFY_INTERVAL_MS = 10000;
+const authenticationCodes = new Set(['E401', 'E403', 'ENEEDAUTH', 'EOTP']);
+function authenticationRejected(error) {
+  if (authenticationCodes.has(error?.code)) return true;
+  const output = [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
+  return /(?:^|\n)(?:npm (?:error|ERR!) code |)(?:E401|E403|ENEEDAUTH|EOTP)\b/.test(output);
+}
+// Capture npm's actual error code while preserving its diagnostic output. The
+// generic inherited-stderr exec error does not retain the authentication reason.
+export function publishArchive(pkg, release, destination) {
+  const result = spawnSync('npm', ['publish', join(destination, pkg.filename), '--ignore-scripts', '--registry', release.registry, '--access', release.access, '--tag', release.channel], {
+    cwd: tmpdir(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw Object.assign(new Error(`npm publish failed (${result.signal ?? `exit ${result.status}`})`), {
+    stdout: result.stdout, stderr: result.stderr,
+  });
+}
 export async function publishRelease(record, { lookup, publish, tag, download, wait = () => new Promise(resolve => setTimeout(resolve, VERIFY_INTERVAL_MS)) }) {
   assert.equal(typeof download, 'function', 'Registry tarball download is required for immutable-byte verification');
   // Preflight the entire group before the first write, including channel rollback.
@@ -149,10 +167,13 @@ export async function publishRelease(record, { lookup, publish, tag, download, w
     states.push({ pkg, existing, repair });
   }
   for (const { pkg, existing, repair } of states) {
-    // A rejected publish (e.g. 409 on a still-staged version from an earlier attempt) is only fatal if the exact reviewed bytes never appear.
+    // Staged conflicts and ambiguous failures may settle; explicit auth rejections cannot.
     let publishError;
     if (!existing) {
-      try { publish(pkg, record); } catch (error) { publishError = error; }
+      try { publish(pkg, record); } catch (error) {
+        if (authenticationRejected(error)) throw error;
+        publishError = error;
+      }
     }
     // Repair an interrupted channel update even when the immutable version exists.
     if (repair) {
@@ -290,7 +311,7 @@ export async function runCli({ repoRoot = process.cwd(), groups = loadConfig(rep
   await publishRelease(record, {
     lookup: registryLookup,
     download: registryDownload,
-    publish: (pkg, release) => run('npm', ['publish', join(destination, pkg.filename), '--ignore-scripts', '--registry', release.registry, '--access', release.access, '--tag', release.channel], tmpdir()),
+    publish: (pkg, release) => publishArchive(pkg, release, destination),
     tag: (pkg, release) => run('npm', ['dist-tag', 'add', `${pkg.name}@${pkg.version}`, release.channel, '--registry', release.registry], tmpdir()),
   });
   console.log(`Verified ${record.packages.length} registry artifacts for ${record.tag}`);
