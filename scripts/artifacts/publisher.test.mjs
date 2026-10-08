@@ -89,7 +89,7 @@ const stagedFixture = () => {
   const exact = { name: pkg.name, version: pkg.version, dist: { integrity: pkg.integrity } };
   return { bytes, pkg, record, exact };
 };
-const rejectedPublish = () => { throw new Error('409 Cannot publish over previously staged version'); };
+const rejectedPublish = () => { throw Object.assign(new Error('npm publish failed (exit 1)'), { stderr: 'npm error code E403\nnpm error 403 You cannot publish over the previously published versions: 1.2.3.\n' }); };
 test('accepted publication waits beyond the old window for both exact bytes and the channel', async () => {
   const { record, bytes, exact } = fixture(({ root }) => {
     const output = join(root, 'accepted');
@@ -143,6 +143,28 @@ for (const code of ['E401', 'E403', 'ENEEDAUTH', 'EOTP']) {
     });
   }
 }
+for (const format of ['structured', 'legacy-npm-stdout']) {
+  test(`explicit immutable-version E403 (${format}) retains verified retry recovery`, async () => {
+    const { bytes, record, exact } = stagedFixture();
+    const message = 'You cannot publish over the previously published versions: 1.2.3.';
+    const failure = Object.assign(new Error(format === 'structured' ? message : 'publish rejected'),
+      format === 'structured' ? { code: 'E403' } : { stdout: `npm ERR! code E403\nnpm ERR! ${message}\n` });
+    let waits = 0;
+    await publishRelease(record, {
+      lookup: () => waits >= 3 ? exact : null, publish: () => { throw failure; },
+      tag: () => assert.fail('No repair'), download: () => bytes, wait: async () => { waits++; },
+    });
+    assert.equal(waits, 3);
+  });
+}
+test('an immutable-version diagnostic never masks a separate authentication rejection', async () => {
+  const { record } = stagedFixture();
+  const failure = Object.assign(new Error('You cannot publish over the previously published versions: 1.2.3.'), { code: 'E401', stderr: 'npm error code E403\n' });
+  await assert.rejects(publishRelease(record, {
+    lookup: () => null, publish: () => { throw failure; }, tag: () => assert.fail('No repair'),
+    download: () => assert.fail('No download'), wait: async () => assert.fail('No wait'),
+  }), error => error === failure);
+});
 test('npm subprocess authentication diagnostics reach the fast-failure boundary', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'publisher-auth-command-'));
   const previousPath = process.env.PATH;
@@ -170,6 +192,27 @@ process.exit(1);
     }), error => error === failure && /npm error code E401/.test(error.stderr));
   } finally { process.env.PATH = previousPath; rmSync(directory, { recursive: true, force: true }); }
 });
+test('npm subprocess immutable-version E403 settles without repeating publication', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'publisher-conflict-command-'));
+  const previousPath = process.env.PATH;
+  try {
+    writeFileSync(join(directory, 'npm'), `#!${process.execPath}
+process.stderr.write('npm error code E403\\nnpm error 403 You cannot publish over the previously published versions: 1.2.3.\\n');
+process.exit(1);
+`, { mode: 0o755 });
+    process.env.PATH = `${directory}:${previousPath}`;
+    const { bytes, record, exact } = stagedFixture();
+    let waits = 0;
+    let publishes = 0;
+    await publishRelease(record, {
+      lookup: () => waits >= 42 ? exact : null,
+      publish: (pkg, release) => { publishes++; publishArchive({ ...pkg, filename: 'archive.tgz' }, { ...release, access: 'public' }, directory); },
+      tag: () => assert.fail('No channel repair'), download: () => bytes, wait: async () => { waits++; },
+    });
+    assert.equal(waits * VERIFY_INTERVAL_MS, 420_000);
+    assert.equal(publishes, 1);
+  } finally { process.env.PATH = previousPath; rmSync(directory, { recursive: true, force: true }); }
+});
 test('a rejected publish of a still-staged version succeeds once the reviewed bytes appear', async () => {
   const { bytes, record, exact } = stagedFixture();
   let waits = 0;
@@ -186,9 +229,11 @@ test('a rejected publish of a still-staged version succeeds once the reviewed by
 test('a rejected publish whose bytes never appear rethrows the publish error after the full verify window', async () => {
   const { bytes, record } = stagedFixture();
   let waits = 0;
+  let original;
   await assert.rejects(publishRelease(record, {
-    lookup: () => null, publish: rejectedPublish, tag: () => {}, download: () => bytes, wait: async () => { waits++; },
-  }), /409 Cannot publish/);
+    lookup: () => null, publish: () => { try { rejectedPublish(); } catch (error) { original = error; throw error; } },
+    tag: () => {}, download: () => bytes, wait: async () => { waits++; },
+  }), error => error === original && /E403/.test(error.stderr));
   assert.equal(waits, VERIFY_ATTEMPTS - 1);
   assert.equal((VERIFY_ATTEMPTS - 1) * VERIFY_INTERVAL_MS, 600_000, 'staged conflict waits remain bounded');
 });
@@ -209,7 +254,7 @@ test('a rejected publish does not succeed while the channel lags the exact versi
       return ++exactReads > 1 ? exact : null;
     },
     publish: rejectedPublish, tag: () => {}, download: () => bytes, wait: async () => {},
-  }), /409 Cannot publish/);
+  }), error => /E403/.test(error.stderr));
 });
 test('existing retry rejects downloaded bytes before a channel repair can write', async () => {
   const bytes = Buffer.from('reviewed registry bytes');

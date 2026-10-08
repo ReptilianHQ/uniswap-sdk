@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const PUBLISHER_VERSION = '1.2.4';
+export const PUBLISHER_VERSION = '1.2.5';
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const run = (cmd, args, cwd = process.cwd()) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 const safePath = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes('\\') && !value.split('/').includes('..');
@@ -134,9 +134,13 @@ export const VERIFY_ATTEMPTS = 61;
 export const VERIFY_INTERVAL_MS = 10000;
 const authenticationCodes = new Set(['E401', 'E403', 'ENEEDAUTH', 'EOTP']);
 function authenticationRejected(error) {
-  if (authenticationCodes.has(error?.code)) return true;
   const output = [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
-  return /(?:^|\n)(?:npm (?:error|ERR!) code |)(?:E401|E403|ENEEDAUTH|EOTP)\b/.test(output);
+  const codes = new Set([...output.matchAll(/(?:^|\n)(?:npm (?:error|ERR!) code |)(E401|E403|ENEEDAUTH|EOTP)\b/g)].map(match => match[1]));
+  if (authenticationCodes.has(error?.code)) codes.add(error.code);
+  if ([...codes].some(code => code !== 'E403')) return true;
+  // npm also returns E403 when an accepted version is still propagating.
+  // Only its explicit immutable-version conflict may enter byte-verified polling.
+  return codes.has('E403') && !/You cannot publish over (?:the )?previously published versions?\b/i.test(output);
 }
 // Capture npm's actual error code while preserving its diagnostic output. The
 // generic inherited-stderr exec error does not retain the authentication reason.
