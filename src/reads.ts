@@ -1,9 +1,18 @@
-import { type Address, type Hex, type PublicClient } from 'viem';
+import type { Abi, Account, Address, Chain, ContractFunctionArgs, ContractFunctionName, Hex, PublicClient, SimulateContractParameters, SimulateContractReturnType } from 'viem';
 import { v4QuoterAbi, v4StateViewAbi } from './abis.js';
 import { UniswapSdkError, invalid, rpc } from './errors.js';
 import { checkedAddress, poolReference, validateDeployment, type V4Deployment, type V4PoolKey, type V4PoolReference } from './pool.js';
 
-export type V4ReadClient = Pick<PublicClient, 'getChainId' | 'getBlockNumber' | 'readContract' | 'simulateContract'>;
+/** Only the simulation result is consumed; request metadata depends on the client's chain/account. */
+export type V4ReadClient = Pick<PublicClient, 'getChainId' | 'getBlockNumber' | 'readContract'> & {
+  simulateContract: <
+    const abi extends Abi | readonly unknown[],
+    functionName extends ContractFunctionName<abi, 'nonpayable' | 'payable'>,
+    const args extends ContractFunctionArgs<abi, 'nonpayable' | 'payable', functionName>,
+    chainOverride extends Chain | undefined,
+    accountOverride extends Account | Address | undefined = undefined,
+  >(parameters: SimulateContractParameters<abi, functionName, args, Chain | undefined, chainOverride, accountOverride>) => Promise<Pick<SimulateContractReturnType<abi, functionName, args, Chain | undefined, undefined, chainOverride, accountOverride>, 'result'>>;
+};
 export interface V4Observation extends V4PoolReference { blockNumber: bigint }
 export interface V4PoolSnapshot extends V4Observation { sqrtPriceX96: bigint; tick: number; protocolFee: number; lpFee: number; liquidity: bigint }
 
