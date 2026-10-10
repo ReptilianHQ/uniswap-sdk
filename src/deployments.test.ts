@@ -4,6 +4,7 @@ import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
 import {
   arcUniversalRouterMainnet,
+  arcUniswapV3Mainnet,
   arcUniswapV4Mainnet,
   findUniversalRouterDeploymentForNetwork,
   findUniswapV3DeploymentForNetwork,
@@ -26,28 +27,48 @@ const upstream = createRequire(import.meta.url)('@uniswap/sdk-core') as {
 // Reviewed chains Uniswap's own SDK does not list yet; every other deployment must match upstream.
 const notInUpstream = new Set<number>([robinhoodUniswapV3Testnet.chainId]);
 
-function provenance(network: 'mainnet' | 'testnet'): Record<string, unknown> {
-  return JSON.parse(readFileSync(new URL(`../provenance/${network}.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
+function provenance(file: 'mainnet' | 'testnet' | 'arc-mainnet-v3'): Record<string, unknown> {
+  return JSON.parse(readFileSync(new URL(`../provenance/${file}.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
 }
 
 describe('Uniswap v3 deployment provenance', () => {
   it.each([
     ['mainnet', robinhoodUniswapV3Mainnet],
     ['testnet', robinhoodUniswapV3Testnet],
-  ] as const)('keeps %s runtime provenance aligned with the exported deployment', (network, deployment) => {
-    const record = provenance(network) as {
+    ['arc-mainnet-v3', arcUniswapV3Mainnet],
+  ] as const)('keeps %s runtime provenance aligned with the exported deployment', (file, deployment) => {
+    const record = provenance(file) as {
       deploymentId: string; chainId: number; abiRevision: string;
       contracts: Record<string, string>; runtimeCodeHashes: Record<string, string>;
+      positionManagerWiring: { wrappedNative: string }; limitations: string[];
     };
     expect(record).toMatchObject({
       deploymentId: deployment.id,
       chainId: deployment.chainId,
       abiRevision: deployment.abiRevision,
       runtimeCodeHashes: deployment.runtimeCodeHashes,
+      limitations: deployment.limitations,
     });
     for (const [name, address] of Object.entries(deployment.contracts)) {
       expect(getAddress(record.contracts[name])).toBe(address);
     }
+    expect(getAddress(record.positionManagerWiring.wrappedNative)).toBe(deployment.positionManagerWiring.wrappedNative);
+  });
+
+  it('pins the manager WETH9 pointer as the pair asset on Robinhood and as a revert stub on Arc', () => {
+    for (const deployment of [robinhoodUniswapV3Mainnet, robinhoodUniswapV3Testnet]) {
+      expect(deployment.positionManagerWiring.wrappedNative).toBe(deployment.contracts.wrappedNative);
+    }
+    // Arc has no WETH9: the gas token is USDC, an ordinary ERC-20 at 0x3600…0000.
+    expect(arcUniswapV3Mainnet.contracts.wrappedNative).toBe(getAddress('0x3600000000000000000000000000000000000000'));
+    expect(arcUniswapV3Mainnet.positionManagerWiring.wrappedNative).not.toBe(arcUniswapV3Mainnet.contracts.wrappedNative);
+    expect(arcUniswapV3Mainnet.limitations.some(limitation => limitation.startsWith('No native value'))).toBe(true);
+  });
+
+  it('resolves Arc v3 by chain id and network', () => {
+    expect(getUniswapV3Deployment(5_042)).toBe(arcUniswapV3Mainnet);
+    expect(findUniswapV3DeploymentForNetwork('arc-mainnet')).toBe(arcUniswapV3Mainnet);
+    expect(uniswapV3Deployments).toHaveLength(3);
   });
 });
 

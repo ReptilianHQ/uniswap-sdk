@@ -1,6 +1,6 @@
 {
   "name": "@reptilianhq/uniswap-sdk",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Deployment-explicit Uniswap observations and reviewed transaction material.",
   "license": "MIT",
   "type": "module",
@@ -82,6 +82,7 @@
     "./provenance/mainnet.json": "./provenance/mainnet.json",
     "./provenance/testnet.json": "./provenance/testnet.json",
     "./provenance/arc-mainnet-v4.json": "./provenance/arc-mainnet-v4.json",
+    "./provenance/arc-mainnet-v3.json": "./provenance/arc-mainnet-v3.json",
     "./provenance/robinhood-mainnet-universal-router.json": "./provenance/robinhood-mainnet-universal-router.json"
   },
   "scripts": {

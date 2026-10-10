@@ -3,9 +3,9 @@ import { V3_ABI_REVISION } from './v3-abis.js';
 import { UniswapSdkError } from './errors.js';
 import type { V4Deployment } from './pool.js';
 
-export type UniswapV3DeploymentId = 'robinhood-mainnet-v3' | 'robinhood-testnet-v3';
-export type UniswapV3Network = 'robinhood-chain-mainnet' | 'robinhood-chain-testnet';
-export type UniswapV3ChainId = 4_663 | 46_630;
+export type UniswapV3DeploymentId = 'robinhood-mainnet-v3' | 'robinhood-testnet-v3' | 'arc-mainnet-v3';
+export type UniswapV3Network = 'robinhood-chain-mainnet' | 'robinhood-chain-testnet' | 'arc-mainnet';
+export type UniswapV3ChainId = 4_663 | 46_630 | 5_042;
 
 export interface UniswapV3Contracts {
   factory: Address;
@@ -29,6 +29,15 @@ export interface UniswapV3Deployment {
   reviewedAt: string;
   contracts: UniswapV3Contracts;
   runtimeCodeHashes: UniswapV3RuntimeCodeHashes;
+  /**
+   * What the position manager's own `WETH9()` returns. On Robinhood this is
+   * `contracts.wrappedNative`. On Arc it is a revert stub: the chain's gas token
+   * is USDC, exposed as an ordinary ERC-20, and Uniswap deployed v3 there with no
+   * WETH9. `contracts.wrappedNative` is the asset hosts pair against; this field
+   * is wiring evidence only and must never be used as a token.
+   */
+  positionManagerWiring: Readonly<{ wrappedNative: Address }>;
+  limitations: readonly string[];
 }
 
 export type UniswapV4DeploymentId = 'arc-mainnet-v4';
@@ -79,6 +88,11 @@ export interface UniswapV4Deployment extends V4Deployment {
 
 const multicall3 = getAddress('0xca11bde05977b3631167028862be2a173976ca11');
 
+const V3_RUNTIME_PIN_LIMITATIONS: readonly string[] = Object.freeze([
+  'Compatibility checks chain identity, exact runtime code hashes, and position-manager factory/WETH9 wiring.',
+  'Runtime code hashes establish deployed-code identity; they do not establish source verification or custom-hook compatibility.',
+]);
+
 export const robinhoodUniswapV3Mainnet: UniswapV3Deployment = deepFreeze({
   id: 'robinhood-mainnet-v3',
   chainId: 4_663,
@@ -103,6 +117,8 @@ export const robinhoodUniswapV3Mainnet: UniswapV3Deployment = deepFreeze({
     wrappedNative: '0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353',
     multicall3: '0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891',
   },
+  positionManagerWiring: { wrappedNative: getAddress('0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73') },
+  limitations: V3_RUNTIME_PIN_LIMITATIONS,
 });
 
 export const robinhoodUniswapV3Testnet: UniswapV3Deployment = deepFreeze({
@@ -129,6 +145,58 @@ export const robinhoodUniswapV3Testnet: UniswapV3Deployment = deepFreeze({
     wrappedNative: '0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353',
     multicall3: '0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891',
   },
+  positionManagerWiring: { wrappedNative: getAddress('0x7943e237c7F95DA44E0301572D358911207852Fa') },
+  limitations: [
+    "The factory and position manager were reviewed against pinned Uniswap v3 source artifacts; the remaining addresses have partial explorer verification.",
+    "Runtime code hashes establish deployed-code identity; they do not establish source verification or custom-hook compatibility.",
+  ],
+});
+
+/**
+ * Official Uniswap v3 on Arc mainnet, from Uniswap/contracts
+ * deployments/json/5042.json at 047d585853f89726c0fdef46bbf633bab8fc9051 (the
+ * manifest the Arc v4 record pins), cross-checked against @uniswap/sdk-core.
+ * Runtime hashes were read at block 25,260,303.
+ *
+ * Arc has no WETH9. The gas token is USDC and the same asset is an ordinary
+ * ERC-20 at 0x3600…0000 (6 decimals), so `contracts.wrappedNative` is that
+ * token. The position manager's `WETH9()` instead returns a 53-byte stub that
+ * reverts with `0xea3559ef` on every call; it is pinned under
+ * `positionManagerWiring` for the wiring check only. Nothing may send native
+ * value through this deployment: every pool is ERC-20/ERC-20, and
+ * `refundETH`/`unwrapWETH9` revert.
+ */
+export const arcUniswapV3Mainnet: UniswapV3Deployment = deepFreeze({
+  id: 'arc-mainnet-v3',
+  chainId: 5_042,
+  network: 'arc-mainnet',
+  abiRevision: V3_ABI_REVISION,
+  provenance: 'official',
+  explorerVerification: 'partial',
+  reviewedAt: '2026-10-10',
+  contracts: {
+    factory: getAddress('0xf0db7b58379503491d857dB50AC9ece64c653918'),
+    nonfungiblePositionManager: getAddress('0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377'),
+    quoterV2: getAddress('0x7DfD4F31be6814D2906BDE155c3e1B146EAc1468'),
+    swapRouter02: getAddress('0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77'),
+    wrappedNative: getAddress('0x3600000000000000000000000000000000000000'),
+    multicall3,
+  },
+  runtimeCodeHashes: {
+    factory: '0x621c4819f7b62d7ddb153206bc30950bcc3f5cc9d24c45661f8c2f31dcbd166d',
+    nonfungiblePositionManager: '0xcad0552151ba7675afe512ebe77fcc6eed68a0cb65775d31e38d44823e6796a0',
+    quoterV2: '0xf222999269407743c526ee7c9d0c9b4fabec26773d48fd6fd257c5ebca976ea7',
+    swapRouter02: '0xc53680bc70e67f7e8818a0e1302e9b70a4460493bc6dd6db056575b17cb3af25',
+    wrappedNative: '0xc9987bd3af6b26a030951faa7eacc017b68343aeedf3ce5fe68f821c4b93939d',
+    multicall3: '0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891',
+  },
+  positionManagerWiring: { wrappedNative: getAddress('0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f') },
+  limitations: [
+    ...V3_RUNTIME_PIN_LIMITATIONS,
+    'No native value: the position manager WETH9 pointer is a revert stub, so every pool is ERC-20/ERC-20 and refundETH/unwrapWETH9 revert. wrappedNative is the ERC-20 form of the gas token (USDC, 6 decimals), not a wrapper the manager can unwrap.',
+    'wrappedNative is an upgradeable proxy; its pinned runtime hash covers the proxy, not the implementation behind it.',
+    'Explorer source verification was not checked at review (arc-scan was unreachable); identity rests on the official manifest, @uniswap/sdk-core, and runtime code hashes.',
+  ],
 });
 
 const uniswapContractsRepository = 'https://github.com/Uniswap/contracts' as const;
@@ -339,6 +407,7 @@ export function findUniversalRouterDeploymentForNetwork(network: string): Univer
 export const uniswapV3Deployments: readonly UniswapV3Deployment[] = Object.freeze([
   robinhoodUniswapV3Mainnet,
   robinhoodUniswapV3Testnet,
+  arcUniswapV3Mainnet,
 ]);
 
 /** Every reviewed Uniswap v4 deployment. Addresses are pinned here, not read from upstream. */

@@ -2,6 +2,7 @@ import { keccak256 } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 import {
   arcUniversalRouterMainnet,
+  arcUniswapV3Mainnet,
   arcUniswapV4Mainnet,
   robinhoodUniversalRouterMainnet,
   robinhoodUniswapV3Testnet,
@@ -57,6 +58,37 @@ describe('Uniswap v3 compatibility', () => {
     const client = { getChainId: vi.fn().mockResolvedValue(1), getBytecode: vi.fn() };
     await expect(verifyUniswapV3Compatibility(client as never, deployment)).rejects.toMatchObject({ code: 'DEPLOYMENT_MISMATCH' });
     expect(client.getBytecode).not.toHaveBeenCalled();
+  });
+
+  // Arc has no WETH9: the manager points at a revert stub while wrappedNative is the USDC ERC-20.
+  const arcV3: UniswapV3Deployment = { ...arcUniswapV3Mainnet, runtimeCodeHashes: deployment.runtimeCodeHashes };
+
+  it('checks the manager WETH9 pointer against the wiring pin, not the pair asset', async () => {
+    const client = {
+      getChainId: vi.fn().mockResolvedValue(arcV3.chainId),
+      getBytecode: vi.fn().mockResolvedValue(bytecode),
+      readContract: vi.fn()
+        .mockResolvedValueOnce(arcV3.contracts.factory)
+        .mockResolvedValueOnce(arcV3.positionManagerWiring.wrappedNative),
+    };
+    const report = await verifyUniswapV3Compatibility(client as never, arcV3);
+    expect(report.chainId).toBe(5_042);
+    expect(report.positionManagerWrappedNative).toBe(arcV3.positionManagerWiring.wrappedNative);
+    expect(report.positionManagerWrappedNative).not.toBe(arcV3.contracts.wrappedNative);
+  });
+
+  it('rejects a manager whose WETH9 is the pair asset when the pin says otherwise', async () => {
+    const client = {
+      getChainId: vi.fn().mockResolvedValue(arcV3.chainId),
+      getBytecode: vi.fn().mockResolvedValue(bytecode),
+      readContract: vi.fn()
+        .mockResolvedValueOnce(arcV3.contracts.factory)
+        .mockResolvedValueOnce(arcV3.contracts.wrappedNative),
+    };
+    await expect(verifyUniswapV3Compatibility(client as never, arcV3)).rejects.toMatchObject({
+      code: 'DEPLOYMENT_MISMATCH',
+      path: 'positionManager.WETH9',
+    });
   });
 });
 

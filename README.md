@@ -11,7 +11,7 @@ It never owns keys, authorization policy, transaction submission, persistence, o
   exact-input Quoter simulation, ordered quote batches, initialized tick windows,
   reviewed Arc infrastructure, and unsigned position mint, increase, partial-removal,
   and atomic full-close material with strict review.
-- `./v3`: Robinhood v3 deployment identity, compatibility checks, unsigned
+- `./v3`: Robinhood and Arc v3 deployment identity, compatibility checks, unsigned
   position transaction builders, strict calldata review, and receipt evidence.
 - `./deployments`, `./compatibility`, `./transactions`, `./receipts`: stable
   capability subpaths for the capital-moving v3 surface.
@@ -82,7 +82,14 @@ Generic v4 reads still require an explicit `reviewedDeployment`. Hosts select on
 `uniswapV4Deployments` with `getUniswapV4Deployment(chainId)` or
 `findUniswapV4DeploymentForNetwork(network)` (today only `arcUniswapV4Mainnet`), and must
 run `verifyUniswapV4Compatibility` before relying on its pinned shared Uniswap infrastructure.
-V3 hosts use `uniswapV3Deployments` and `getUniswapV3Deployment(chainId)` the same way.
+V3 hosts use `uniswapV3Deployments` and `getUniswapV3Deployment(chainId)` the same way
+(`robinhoodUniswapV3Mainnet`, `robinhoodUniswapV3Testnet`, `arcUniswapV3Mainnet`).
+Arc v3 has no WETH9: the chain's gas token is USDC, exposed as an ordinary ERC-20, so
+`arcUniswapV3Mainnet.contracts.wrappedNative` is that token (6 decimals) and every pool is
+ERC-20/ERC-20. The position manager's own `WETH9()` returns a revert stub, pinned under
+`positionManagerWiring` for the wiring check only; hosts must never send native value or
+build `refundETH`/`unwrapWETH9` calls on that deployment. See
+[provenance/arc-mainnet-v3.json](./provenance/arc-mainnet-v3.json).
 Addresses are pinned in this package, not read from `@uniswap/sdk-core`; a unit test fails
 when a pinned address disagrees with the address Uniswap publishes for that chain. This does not authenticate Argus Portal,
 hook, locker, splitter, tracker, or fee semantics. Hosts own endpoint selection,
@@ -288,7 +295,7 @@ SDK-built and reviewed Robinhood v3 full close plus an Arc v4 unhooked
 mint/increase/partial-remove/full-close lifecycle against pinned Anvil forks,
 documented in [docs/FORK_TESTING.md](./docs/FORK_TESTING.md).
 
-`npm run test:live-compatibility` rechecks the two Robinhood v3 deployments, the Arc v4
+`npm run test:live-compatibility` rechecks the three v3 deployments, the Arc v4
 deployment, and both reviewed Universal Routers against their public RPCs. `UNISWAP_MAINNET_RPC_URL`,
 `UNISWAP_TESTNET_RPC_URL`, and `UNISWAP_ARC_RPC_URL` may override those read-only
 endpoints. Retained-artifact reproduction is documented in
