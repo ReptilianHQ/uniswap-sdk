@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "arc-mainnet-v3",
+  "chainId": 5042,
+  "reviewedAt": "2026-10-10",
+  "abiRevision": "uniswap-v3-core-periphery-1.0.0",
+  "provenance": "official",
+  "explorerVerification": "partial",
+  "officialDeploymentManifest": {
+    "repository": "https://github.com/Uniswap/contracts",
+    "commit": "047d585853f89726c0fdef46bbf633bab8fc9051",
+    "path": "deployments/json/5042.json",
+    "sha256": "77b5e8cef3cfe81b723082b0a44918a0c33c039706c80e09dbb702b996fea301",
+    "crossChecked": "@uniswap/sdk-core@7.19.2 CHAIN_TO_ADDRESSES_MAP[5042]"
+  },
+  "contracts": {
+    "factory": "0xf0db7b58379503491d857dB50AC9ece64c653918",
+    "nonfungiblePositionManager": "0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377",
+    "quoterV2": "0x7DfD4F31be6814D2906BDE155c3e1B146EAc1468",
+    "swapRouter02": "0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77",
+    "wrappedNative": "0x3600000000000000000000000000000000000000",
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11"
+  },
+  "runtimeCodeHashes": {
+    "factory": "0x621c4819f7b62d7ddb153206bc30950bcc3f5cc9d24c45661f8c2f31dcbd166d",
+    "nonfungiblePositionManager": "0xcad0552151ba7675afe512ebe77fcc6eed68a0cb65775d31e38d44823e6796a0",
+    "quoterV2": "0xf222999269407743c526ee7c9d0c9b4fabec26773d48fd6fd257c5ebca976ea7",
+    "swapRouter02": "0xc53680bc70e67f7e8818a0e1302e9b70a4460493bc6dd6db056575b17cb3af25",
+    "wrappedNative": "0xc9987bd3af6b26a030951faa7eacc017b68343aeedf3ce5fe68f821c4b93939d",
+    "multicall3": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+  },
+  "positionManagerWiring": {
+    "wrappedNative": "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f",
+    "wrappedNativeRuntimeCodeHash": "0xb16b4aa5c5f14b9d186d48bb074c2d02a96e9e2e3aef74d0815f6d4a9a9f7bdd",
+    "wrappedNativeRuntimeCodeBytes": 53,
+    "wrappedNativeRuntimeCode": "0x6080604052348015600e575f5ffd5b5060405163ea3559ef60e01b815260040160405180910390fdfea164736f6c634300081e000a",
+    "note": "Every call reverts with custom error 0xea3559ef. Arc has no WETH9; the gas token is USDC and contracts.wrappedNative is its ERC-20 form (name USDC, symbol USDC, 6 decimals, upgradeable proxy)."
+  },
+  "runtimeCodeHashPin": {
+    "blockNumber": 25260303,
+    "blockHash": "0x34d5929e21aa7696e06e135426d17d0c688196cf5a774ef82184527741a3d12e",
+    "rpc": "https://rpc.drpc.mainnet.arc.io"
+  },
+  "limitations": [
+    "Compatibility checks chain identity, exact runtime code hashes, and position-manager factory/WETH9 wiring.",
+    "Runtime code hashes establish deployed-code identity; they do not establish source verification or custom-hook compatibility.",
+    "No native value: the position manager WETH9 pointer is a revert stub, so every pool is ERC-20/ERC-20 and refundETH/unwrapWETH9 revert. wrappedNative is the ERC-20 form of the gas token (USDC, 6 decimals), not a wrapper the manager can unwrap.",
+    "wrappedNative is an upgradeable proxy; its pinned runtime hash covers the proxy, not the implementation behind it.",
+    "Explorer source verification was not checked at review (arc-scan was unreachable); identity rests on the official manifest, @uniswap/sdk-core, and runtime code hashes."
+  ]
+}

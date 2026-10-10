@@ -75,7 +75,10 @@ export async function verifyUniswapV3Compatibility(
       readAddress(client, deployment.contracts.nonfungiblePositionManager, 'WETH9'),
     ]);
     if (factory.toLowerCase() !== deployment.contracts.factory.toLowerCase()) mismatch('positionManager.factory', deployment.contracts.factory, factory);
-    if (wrappedNative.toLowerCase() !== deployment.contracts.wrappedNative.toLowerCase()) mismatch('positionManager.WETH9', deployment.contracts.wrappedNative, wrappedNative);
+    // The manager's WETH9 is wiring evidence, not necessarily a token: on Arc it is a revert stub.
+    if (wrappedNative.toLowerCase() !== deployment.positionManagerWiring.wrappedNative.toLowerCase()) {
+      mismatch('positionManager.WETH9', deployment.positionManagerWiring.wrappedNative, wrappedNative);
+    }
 
     return {
       chainId,

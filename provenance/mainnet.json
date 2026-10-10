@@ -22,6 +22,9 @@
     "wrappedNative": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
     "multicall3": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
   },
+  "positionManagerWiring": {
+    "wrappedNative": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+  },
   "runtimeCodeHashPin": {
     "blockNumber": 60266150,
     "rpc": "https://rpc.mainnet.chain.robinhood.com"
