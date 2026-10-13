@@ -97,7 +97,7 @@
     "test:consumer": "node examples/read-only-consumer.mjs",
     "check:conformance": "node scripts/check-conformance.mjs . && node --test scripts/check-conformance.node-test.mjs",
     "check:publisher": "node scripts/artifacts/check.mjs",
-    "test:release": "node --test scripts/artifacts/publisher.test.mjs scripts/release.test.mjs",
+    "test:release": "node --test scripts/artifacts/publisher.test.mjs scripts/artifacts/github-packages-mirror.test.mjs scripts/release.test.mjs",
     "check:package": "publint && attw --pack . --profile esm-only",
     "prepack": "npm run build",
     "test:types": "tsc -p examples/types/tsconfig.json && tsc -p examples/types/tsconfig.non-strict-nulls.json"

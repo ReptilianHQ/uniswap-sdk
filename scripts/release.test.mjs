@@ -26,3 +26,16 @@ test('publish workflow authenticates via npm OIDC trusted publishing, not a stat
   assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN/);
 });
+test('GitHub Packages mirror uses trusted main tooling and package-scoped credentials', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/mirror-github-packages.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /ref: main/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /packages: write/);
+  assert.match(workflow, /registry-url: https:\/\/npm\.pkg\.github\.com/);
+  assert.match(workflow, /github-packages-mirror\.mjs/);
+  assert.match(workflow, /mirror-intent\.json/);
+  assert.match(workflow, /mirror-verification\.json/);
+  assert.match(workflow, /if-no-files-found: error/);
+  assert.match(workflow, /NODE_AUTH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+  assert.doesNotMatch(workflow, /npm publish/);
+});
