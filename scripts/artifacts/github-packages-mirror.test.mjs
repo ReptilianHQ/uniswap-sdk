@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,7 @@ import {
   PACKAGE_NAME,
   prepareMirrorArtifact,
   publicDownloadExpectation,
+  stageMirrorArtifact,
 } from './github-packages-mirror.mjs';
 import { integrity } from './publisher.mjs';
 
@@ -117,6 +118,35 @@ test('artifact preparation maps packument integrity and verifies the exact publi
       belongsToMain: true,
       filename: 'package.tgz',
     }), /Downloaded registry tarball differs/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('mirror staging validates before creating any output', () => {
+  const root = mkdtempSync(join(tmpdir(), 'uniswap-mirror-stage-'));
+  try {
+    mkdirSync(join(root, 'package'));
+    writeFileSync(join(root, 'package/package.json'), JSON.stringify(manifest));
+    execFileSync('tar', ['-czf', join(root, 'package.tgz'), '-C', root, 'package']);
+    const bytes = readFileSync(join(root, 'package.tgz'));
+    const destination = join(root, 'output');
+    assert.throws(() => stageMirrorArtifact({
+      destination,
+      publicPackage: {
+        name: PACKAGE_NAME,
+        version: '0.13.0',
+        dist: { integrity: integrity(Buffer.from('different bytes')) },
+      },
+      bytes,
+      manifest,
+      releaseTag: 'uniswap-sdk-v0.13.0',
+      taggedCommit: sourceSha,
+      versionAtTag: '0.13.0',
+      belongsToMain: true,
+      filename: 'package.tgz',
+    }), /Downloaded registry tarball differs/);
+    assert.equal(existsSync(destination), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

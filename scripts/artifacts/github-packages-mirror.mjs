@@ -104,6 +104,18 @@ export function prepareMirrorArtifact({
   return mirrorRecord({ ...identity, releaseTag, filename, bytes });
 }
 
+export function stageMirrorArtifact({ destination, ...input }) {
+  const record = prepareMirrorArtifact(input);
+  mkdirSync(destination, { recursive: true });
+  writeFileSync(join(destination, input.filename), input.bytes);
+  writeFileSync(join(destination, 'mirror-intent.json'), `${JSON.stringify({
+    ...record,
+    canonicalRegistry: PUBLIC_REGISTRY,
+    startedAt: new Date().toISOString(),
+  }, null, 2)}\n`);
+  return record;
+}
+
 export async function runMirror({
   argv = process.argv.slice(2),
   repoRoot = process.cwd(),
@@ -142,11 +154,10 @@ export async function runMirror({
   }));
 
   const destination = resolve(output);
-  mkdirSync(destination, { recursive: true });
   const filename = `reptilianhq-uniswap-sdk-${version}.tgz`;
   assert.equal(filename, basename(filename));
-  writeFileSync(join(destination, filename), bytes);
-  const record = prepareMirrorArtifact({
+  const record = stageMirrorArtifact({
+    destination,
     publicPackage,
     bytes,
     manifest,
@@ -156,11 +167,6 @@ export async function runMirror({
     belongsToMain,
     filename,
   });
-  writeFileSync(join(destination, 'mirror-intent.json'), `${JSON.stringify({
-    ...record,
-    canonicalRegistry: PUBLIC_REGISTRY,
-    startedAt: new Date().toISOString(),
-  }, null, 2)}\n`);
 
   await publishRelease(record, {
     lookup: registryLookup,
