@@ -13,7 +13,9 @@ bytes, verifies their embedded source identity against the immutable tag and
 canonical. The restricted mirror exists because private Reptilian packages use
 the same npm scope and npm can route a scope to only one registry during a clean
 consumer install. Manual mirror retries accept the already-published exact
-version and fail closed on byte or source-identity drift.
+version and fail closed on byte or source-identity drift. Each run retains a
+pre-write intent record plus final verification evidence when verification
+completes, so an ambiguous post-write failure remains auditable and retryable.
 
 ## One-time npm setup
 

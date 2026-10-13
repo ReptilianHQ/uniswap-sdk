@@ -123,6 +123,11 @@ export async function runMirror({
   assert.equal(filename, basename(filename));
   writeFileSync(join(destination, filename), bytes);
   const record = mirrorRecord({ ...identity, releaseTag, filename, bytes });
+  writeFileSync(join(destination, 'mirror-intent.json'), `${JSON.stringify({
+    ...record,
+    canonicalRegistry: PUBLIC_REGISTRY,
+    startedAt: new Date().toISOString(),
+  }, null, 2)}\n`);
 
   await publishRelease(record, {
     lookup: registryLookup,
