@@ -54,6 +54,17 @@ export async function lookupPublicPackage(version, fetchImpl = fetch) {
   return packument.versions?.[version] ?? null;
 }
 
+export function publicDownloadExpectation(publicPackage, reptilianRelease) {
+  assert.match(publicPackage.dist?.integrity ?? '', /^sha512-[A-Za-z0-9+/]+={0,2}$/,
+    'Public package metadata has no SHA-512 integrity');
+  return {
+    name: publicPackage.name,
+    version: publicPackage.version,
+    integrity: publicPackage.dist.integrity,
+    reptilianRelease,
+  };
+}
+
 export function mirrorRecord({ releaseTag, taggedCommit, version, filename, bytes }) {
   return {
     schemaVersion: 1,
@@ -115,7 +126,7 @@ export async function runMirror({
     maxBuffer: 4 * 1024 * 1024,
   }));
   const identity = assertMirrorIdentity({ manifest, releaseTag, taggedCommit, versionAtTag, belongsToMain });
-  assertDownloaded({ ...publicPackage, reptilianRelease: manifest.reptilianRelease }, bytes);
+  assertDownloaded(publicDownloadExpectation(publicPackage, manifest.reptilianRelease), bytes);
 
   const destination = resolve(output);
   mkdirSync(destination, { recursive: true });

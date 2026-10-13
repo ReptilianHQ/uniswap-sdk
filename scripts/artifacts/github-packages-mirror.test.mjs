@@ -6,6 +6,7 @@ import {
   MIRROR_REGISTRY,
   mirrorRecord,
   PACKAGE_NAME,
+  publicDownloadExpectation,
 } from './github-packages-mirror.mjs';
 
 const sourceSha = 'a'.repeat(40);
@@ -52,6 +53,25 @@ test('public registry lookup never forwards GitHub Packages credentials', async 
   });
   assert.equal(result.version, '0.13.0');
   assert.deepEqual(calls, [['https://registry.npmjs.org/%40reptilianhq%2Funiswap-sdk']]);
+});
+
+test('maps public packument integrity into the shared downloaded-byte contract', () => {
+  const expected = publicDownloadExpectation({
+    name: PACKAGE_NAME,
+    version: '0.13.0',
+    dist: { integrity: 'sha512-YWJj' },
+  }, manifest.reptilianRelease);
+  assert.deepEqual(expected, {
+    name: PACKAGE_NAME,
+    version: '0.13.0',
+    integrity: 'sha512-YWJj',
+    reptilianRelease: manifest.reptilianRelease,
+  });
+  assert.throws(() => publicDownloadExpectation({
+    name: PACKAGE_NAME,
+    version: '0.13.0',
+    dist: {},
+  }, manifest.reptilianRelease), /no SHA-512 integrity/);
 });
 
 test('preserves canonical bytes and source identity in the restricted mirror record', () => {
