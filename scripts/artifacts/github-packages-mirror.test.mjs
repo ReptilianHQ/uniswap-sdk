@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   assertMirrorIdentity,
   lookupPublicPackage,
   MIRROR_REGISTRY,
   mirrorRecord,
   PACKAGE_NAME,
+  prepareMirrorArtifact,
+  publicDownloadExpectation,
+  stageMirrorArtifact,
 } from './github-packages-mirror.mjs';
+import { integrity } from './publisher.mjs';
 
 const sourceSha = 'a'.repeat(40);
 const manifest = {
@@ -52,6 +60,96 @@ test('public registry lookup never forwards GitHub Packages credentials', async 
   });
   assert.equal(result.version, '0.13.0');
   assert.deepEqual(calls, [['https://registry.npmjs.org/%40reptilianhq%2Funiswap-sdk']]);
+});
+
+test('maps public packument integrity into the shared downloaded-byte contract', () => {
+  const publicIntegrity = integrity(Buffer.from('reviewed public bytes'));
+  const expected = publicDownloadExpectation({
+    name: PACKAGE_NAME,
+    version: '0.13.0',
+    dist: { integrity: publicIntegrity },
+  }, manifest.reptilianRelease);
+  assert.deepEqual(expected, {
+    name: PACKAGE_NAME,
+    version: '0.13.0',
+    integrity: publicIntegrity,
+    reptilianRelease: manifest.reptilianRelease,
+  });
+  assert.throws(() => publicDownloadExpectation({
+    name: PACKAGE_NAME,
+    version: '0.13.0',
+    dist: {},
+  }, manifest.reptilianRelease), /no SHA-512 integrity/);
+});
+
+test('artifact preparation maps packument integrity and verifies the exact public tarball', () => {
+  const root = mkdtempSync(join(tmpdir(), 'uniswap-mirror-artifact-'));
+  try {
+    mkdirSync(join(root, 'package'));
+    writeFileSync(join(root, 'package/package.json'), JSON.stringify(manifest));
+    execFileSync('tar', ['-czf', join(root, 'package.tgz'), '-C', root, 'package']);
+    const bytes = readFileSync(join(root, 'package.tgz'));
+    const record = prepareMirrorArtifact({
+      publicPackage: {
+        name: PACKAGE_NAME,
+        version: '0.13.0',
+        dist: { integrity: integrity(bytes) },
+      },
+      bytes,
+      manifest,
+      releaseTag: 'uniswap-sdk-v0.13.0',
+      taggedCommit: sourceSha,
+      versionAtTag: '0.13.0',
+      belongsToMain: true,
+      filename: 'package.tgz',
+    });
+    assert.equal(record.packages[0].integrity, integrity(bytes));
+    assert.throws(() => prepareMirrorArtifact({
+      publicPackage: {
+        name: PACKAGE_NAME,
+        version: '0.13.0',
+        dist: { integrity: integrity(Buffer.from('different bytes')) },
+      },
+      bytes,
+      manifest,
+      releaseTag: 'uniswap-sdk-v0.13.0',
+      taggedCommit: sourceSha,
+      versionAtTag: '0.13.0',
+      belongsToMain: true,
+      filename: 'package.tgz',
+    }), /Downloaded registry tarball differs/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('mirror staging validates before creating any output', () => {
+  const root = mkdtempSync(join(tmpdir(), 'uniswap-mirror-stage-'));
+  try {
+    mkdirSync(join(root, 'package'));
+    writeFileSync(join(root, 'package/package.json'), JSON.stringify(manifest));
+    execFileSync('tar', ['-czf', join(root, 'package.tgz'), '-C', root, 'package']);
+    const bytes = readFileSync(join(root, 'package.tgz'));
+    const destination = join(root, 'output');
+    assert.throws(() => stageMirrorArtifact({
+      destination,
+      publicPackage: {
+        name: PACKAGE_NAME,
+        version: '0.13.0',
+        dist: { integrity: integrity(Buffer.from('different bytes')) },
+      },
+      bytes,
+      manifest,
+      releaseTag: 'uniswap-sdk-v0.13.0',
+      taggedCommit: sourceSha,
+      versionAtTag: '0.13.0',
+      belongsToMain: true,
+      filename: 'package.tgz',
+    }), /Downloaded registry tarball differs/);
+    assert.equal(existsSync(destination), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('preserves canonical bytes and source identity in the restricted mirror record', () => {

@@ -54,6 +54,17 @@ export async function lookupPublicPackage(version, fetchImpl = fetch) {
   return packument.versions?.[version] ?? null;
 }
 
+export function publicDownloadExpectation(publicPackage, reptilianRelease) {
+  assert.match(publicPackage.dist?.integrity ?? '', /^sha512-[A-Za-z0-9+/]+={0,2}$/,
+    'Public package metadata has no SHA-512 integrity');
+  return {
+    name: publicPackage.name,
+    version: publicPackage.version,
+    integrity: publicPackage.dist.integrity,
+    reptilianRelease,
+  };
+}
+
 export function mirrorRecord({ releaseTag, taggedCommit, version, filename, bytes }) {
   return {
     schemaVersion: 1,
@@ -76,6 +87,33 @@ export function mirrorRecord({ releaseTag, taggedCommit, version, filename, byte
       },
     }],
   };
+}
+
+export function prepareMirrorArtifact({
+  publicPackage,
+  bytes,
+  manifest,
+  releaseTag,
+  taggedCommit,
+  versionAtTag,
+  belongsToMain,
+  filename,
+}) {
+  const identity = assertMirrorIdentity({ manifest, releaseTag, taggedCommit, versionAtTag, belongsToMain });
+  assertDownloaded(publicDownloadExpectation(publicPackage, manifest.reptilianRelease), bytes);
+  return mirrorRecord({ ...identity, releaseTag, filename, bytes });
+}
+
+export function stageMirrorArtifact({ destination, ...input }) {
+  const record = prepareMirrorArtifact(input);
+  mkdirSync(destination, { recursive: true });
+  writeFileSync(join(destination, input.filename), input.bytes);
+  writeFileSync(join(destination, 'mirror-intent.json'), `${JSON.stringify({
+    ...record,
+    canonicalRegistry: PUBLIC_REGISTRY,
+    startedAt: new Date().toISOString(),
+  }, null, 2)}\n`);
+  return record;
 }
 
 export async function runMirror({
@@ -114,20 +152,21 @@ export async function runMirror({
     input: bytes,
     maxBuffer: 4 * 1024 * 1024,
   }));
-  const identity = assertMirrorIdentity({ manifest, releaseTag, taggedCommit, versionAtTag, belongsToMain });
-  assertDownloaded({ ...publicPackage, reptilianRelease: manifest.reptilianRelease }, bytes);
 
   const destination = resolve(output);
-  mkdirSync(destination, { recursive: true });
-  const filename = `reptilianhq-uniswap-sdk-${identity.version}.tgz`;
+  const filename = `reptilianhq-uniswap-sdk-${version}.tgz`;
   assert.equal(filename, basename(filename));
-  writeFileSync(join(destination, filename), bytes);
-  const record = mirrorRecord({ ...identity, releaseTag, filename, bytes });
-  writeFileSync(join(destination, 'mirror-intent.json'), `${JSON.stringify({
-    ...record,
-    canonicalRegistry: PUBLIC_REGISTRY,
-    startedAt: new Date().toISOString(),
-  }, null, 2)}\n`);
+  const record = stageMirrorArtifact({
+    destination,
+    publicPackage,
+    bytes,
+    manifest,
+    releaseTag,
+    taggedCommit,
+    versionAtTag,
+    belongsToMain,
+    filename,
+  });
 
   await publishRelease(record, {
     lookup: registryLookup,
