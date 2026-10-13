@@ -1,0 +1,60 @@
+name: Mirror Uniswap SDK to GitHub Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact stable or numbered rc version already published to public npm
+        required: true
+        type: string
+  workflow_run:
+    workflows: ['Publish Uniswap SDK']
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'uniswap-sdk-v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: artifact-mirror-uniswap-sdk
+      cancel-in-progress: false
+    env:
+      MIRROR_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('uniswap-sdk-v{0}', inputs.version) || github.event.workflow_run.head_branch }}
+
+    steps:
+      - name: Checkout trusted mirror tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup Node.js and GitHub Packages authentication
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: https://npm.pkg.github.com
+          scope: '@reptilianhq'
+
+      - name: Mirror verified public artifact bytes
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/artifacts/github-packages-mirror.mjs "${MIRROR_RELEASE_TAG}" "${RUNNER_TEMP}/mirror"
+
+      - name: Retain mirror evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: uniswap-sdk-github-packages-mirror-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mirror/mirror-verification.json
+          if-no-files-found: ignore
+          retention-days: 90

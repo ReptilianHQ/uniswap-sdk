@@ -6,6 +6,15 @@ standalone package owners. `scripts/artifacts/publisher.lock.json` pins the
 canonical publisher bytes; update them from the Reptilian root's vendor command.
 Do not edit the emitted publisher locally.
 
+After the public publisher succeeds for a tagged release, the separate
+`Mirror Uniswap SDK to GitHub Packages` workflow downloads those exact public
+bytes, verifies their embedded source identity against the immutable tag and
+`main`, and mirrors them to GitHub Packages. The public npm artifact remains
+canonical. The restricted mirror exists because private Reptilian packages use
+the same npm scope and npm can route a scope to only one registry during a clean
+consumer install. Manual mirror retries accept the already-published exact
+version and fail closed on byte or source-identity drift.
+
 ## One-time npm setup
 
 The publish workflow authenticates via npm OIDC Trusted Publishing
